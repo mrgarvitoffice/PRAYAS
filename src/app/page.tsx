@@ -669,10 +669,10 @@ const NewsApp = () => {
                   const title = filters.language === 'hi' && article.titleHi ? article.titleHi : article.title;
                   const summary = filters.language === 'hi' && article.summaryHi ? article.summaryHi : article.summary;
                   const importantPoints = filters.language === 'hi' && article.importantPointsHi.length > 0 ? article.importantPointsHi : article.importantPoints;
-                  const isLoading = isCurrentlyLoadingAudio || isCurrentlyProcessingText;
+                  const isLoading = isCurrentlyLoadingAudio || (filters.language === 'hi' && isCurrentlyProcessingText);
 
                   const hasAudio = filters.language === 'en' ? !!article.audioDataUriEn : !!article.audioDataUriHi;
-                  const needsProcessing = (filters.language === 'en' && article.importantPoints.length === 0) || (filters.language === 'hi' && !article.titleHi);
+                  const needsProcessing = (filters.language === 'hi' && !article.titleHi);
 
                   return (
                     <article
@@ -714,8 +714,8 @@ const NewsApp = () => {
                         
                         </div>
                         
-                        {isLoading && filters.language === 'hi' ? (
-                            <p className="text-slate-600 dark:text-slate-300 leading-relaxed flex-1">Translating...</p>
+                        {isLoading ? (
+                            <p className="text-slate-600 dark:text-slate-300 leading-relaxed flex-1">Processing...</p>
                         ) : importantPoints.length > 0 ? (
                           <ul className="space-y-2 text-slate-600 dark:text-slate-300 leading-relaxed flex-1 list-disc pl-5">
                             {importantPoints.map((point, index) => (
@@ -730,7 +730,7 @@ const NewsApp = () => {
                       <div className="bg-slate-50 dark:bg-slate-800 p-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700/50">
                         <div className="flex items-center gap-2">
                           <button onClick={() => audioPlayer.playArticle(article, filters.language)} disabled={isLoading || isSpeakingHeadlines} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Listen to Article">
-                              {isCurrentlyPlaying ? <Pause className="w-5 h-5"/> : isLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Headphones className="w-5 h-5"/>}
+                              {isCurrentlyPlaying ? <Pause className="w-5 h-5"/> : isCurrentlyLoadingAudio ? <Loader2 className="w-5 h-5 animate-spin"/> : <Headphones className="w-5 h-5"/>}
                           </button>
                           {needsProcessing && !hasAudio && (
                             <Tooltip>
@@ -872,5 +872,3 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
-
-    

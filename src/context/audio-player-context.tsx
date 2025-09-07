@@ -58,34 +58,29 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const processAndCacheArticle = useCallback(async (articleToProcess: Article, language: Language): Promise<Article | null> => {
     let updatedArticle = { ...articleToProcess };
     
-    const needsProcessing = (language === 'en' && articleToProcess.importantPoints.length === 0) || (language === 'hi' && (!articleToProcess.titleHi || articleToProcess.importantPointsHi.length === 0));
+    // Only process Hindi on demand. English points are pre-fetched.
+    const needsProcessing = language === 'hi' && (!articleToProcess.titleHi || articleToProcess.importantPointsHi.length === 0);
 
     if (needsProcessing) {
       toast({
         title: "Generating Smart Summary...",
-        description: `Processing "${articleToProcess.title.slice(0, 50)}..."`,
+        description: `Translating "${articleToProcess.title.slice(0, 50)}..."`,
       });
       
       try {
-        if (language === 'en') {
-          const summary = await summarizeArticle({ title: articleToProcess.title, full_text: articleToProcess.rawContent });
-          updatedArticle.title = summary.heading;
-          updatedArticle.summary = summary.important_points.join(' ');
-          updatedArticle.importantPoints = summary.important_points;
-        } else { // language === 'hi'
-          const hindiSummary = await translateAndSummarizeArticleHindi({ articleTitle: articleToProcess.title, articleContent: articleToProcess.rawContent });
-          updatedArticle.titleHi = hindiSummary.translatedTitle;
-          updatedArticle.summaryHi = hindiSummary.summaryPoints.join(' ');
-          updatedArticle.importantPointsHi = hindiSummary.summaryPoints;
-        }
-         if (onArticleUpdateRef.current) {
-            onArticleUpdateRef.current(updatedArticle);
+        const hindiSummary = await translateAndSummarizeArticleHindi({ articleTitle: articleToProcess.title, articleContent: articleToProcess.rawContent });
+        updatedArticle.titleHi = hindiSummary.translatedTitle;
+        updatedArticle.summaryHi = hindiSummary.summaryPoints.join(' ');
+        updatedArticle.importantPointsHi = hindiSummary.summaryPoints;
+        
+        if (onArticleUpdateRef.current) {
+           onArticleUpdateRef.current(updatedArticle);
         }
         return updatedArticle;
 
       } catch (e) {
-          console.error("Error during summarization:", e);
-          toast({ variant: 'destructive', title: 'Summarization Failed', description: e instanceof Error ? e.message : 'Could not process article.' });
+          console.error("Error during translation:", e);
+          toast({ variant: 'destructive', title: 'Translation Failed', description: e instanceof Error ? e.message : 'Could not process article.' });
           return null; // Return null on failure
       }
     }

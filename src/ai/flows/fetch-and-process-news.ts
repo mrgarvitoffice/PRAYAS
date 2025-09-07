@@ -10,9 +10,10 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+import { z } from 'zod';
 import { fetchNews } from '@/services/newsdata';
 import type { Article, NewsDataArticle } from '@/lib/types';
+import { summarizeArticle } from './summarize-article';
 
 const FetchAndProcessNewsInputSchema = z.object({
   category: z.string().describe('The news category to fetch.'),
@@ -54,7 +55,7 @@ export type FetchAndProcessNewsOutput = z.infer<
 >;
 
 // This function now does a simple transformation, not expensive AI processing.
-function transformArticle(article: NewsDataArticle): Article {
+function transformArticle(article: NewsDataArticle, importantPoints: string[] = []): Article {
   const publishedAt = new Date(article.pubDate).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -82,7 +83,7 @@ function transformArticle(article: NewsDataArticle): Article {
     titleHi: '',
     summary: summary,
     summaryHi: '',
-    importantPoints: [],
+    importantPoints: importantPoints,
     importantPointsHi: [],
     rawContent: rawContent,
     contentUrl: article.link,
@@ -113,7 +114,19 @@ const fetchAndProcessNewsFlow = ai.defineFlow(
     const validArticles = articles.filter(article => article.title && (article.content || article.description));
 
     // Transform valid articles
-    const transformedArticles = validArticles.map(transformArticle);
+    const transformedArticles = await Promise.all(validArticles.map(async (article) => {
+        try {
+            const summaryResult = await summarizeArticle({
+                title: article.title,
+                full_text: article.content || article.description || '',
+            });
+            return transformArticle(article, summaryResult.important_points);
+        } catch (e) {
+            console.error(`Could not summarize article ${article.article_id}`, e);
+            // If summarization fails, transform without bullet points
+            return transformArticle(article);
+        }
+    }));
     
     return transformedArticles;
   }
