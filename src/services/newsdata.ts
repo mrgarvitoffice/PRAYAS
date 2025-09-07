@@ -27,15 +27,15 @@ export async function fetchNews(
     language: 'en',
     size: size.toString(),
   };
+  
+  if (country) {
+    params.country = country.toLowerCase();
+  }
 
   if (query && query.toLowerCase() !== 'all') {
     params.category = query.toLowerCase();
   } else {
     params.q = 'top';
-  }
-  
-  if (country) {
-    params.country = country.toLowerCase();
   }
 
 
