@@ -81,8 +81,11 @@ const NewsApp = () => {
     currentArticleId: null,
     audioUrl: null,
     progress: 0,
+    isPlaylistActive: false
   });
   const audioRef = useRef(null);
+  const playlistRef = useRef([]);
+  const currentTrackIndexRef = useRef(0);
 
   // Setup Audio Element
   useEffect(() => {
@@ -95,7 +98,12 @@ const NewsApp = () => {
       }
     };
     const handleEnded = () => {
-      setAudioState(s => ({ ...s, isPlaying: false, currentArticleId: null, progress: 0 }));
+        // Play next track in playlist
+        if(audioState.isPlaylistActive) {
+            playNextInPlaylist();
+        } else {
+            setAudioState(s => ({ ...s, isPlaying: false, currentArticleId: null, progress: 0 }));
+        }
     };
     const handlePlay = () => setAudioState(s => ({ ...s, isPlaying: true }));
     const handlePause = () => setAudioState(s => ({ ...s, isPlaying: false }));
@@ -111,7 +119,19 @@ const NewsApp = () => {
       audio.removeEventListener('play', handlePlay);
       audio.removeEventListener('pause', handlePause);
     };
-  }, []);
+  }, [audioState.isPlaylistActive]);
+
+  const playNextInPlaylist = async () => {
+    if (currentTrackIndexRef.current < playlistRef.current.length - 1) {
+        currentTrackIndexRef.current += 1;
+        const nextArticle = playlistRef.current[currentTrackIndexRef.current];
+        await playAudioForArticle(nextArticle);
+    } else {
+        // End of playlist
+        handleStopAudio();
+        toast({ title: "Finished Playlist", description: "All news articles have been read."});
+    }
+  }
 
   // Get unique articles (prevent duplicates)
   const getUniqueArticles = (articles) => {
@@ -281,74 +301,82 @@ const NewsApp = () => {
     }
   }
 
-  // Listen handler
-  const handleListen = async (article) => {
-      const articleId = article.article_id;
-      if (audioState.currentArticleId === articleId && audioState.isPlaying) {
-          audioRef.current.pause();
-          return;
-      }
-      
-      if(audioState.currentArticleId === articleId) {
-          audioRef.current.play();
-          return;
-      }
+  const playAudioForArticle = async (article) => {
+    setAudioState(s => ({ ...s, isLoading: true, currentArticleId: article.article_id, progress: 0 }));
+    toast({
+        title: "Generating Smart Summary...",
+        description: `Processing: ${article.title}`,
+        duration: 10000,
+    });
+    try {
+        const full_text = article.content || article.description || '';
+        if (!full_text) {
+            throw new Error("Article content is not available for summarization.");
+        }
+        let summaryData;
+        if (filters.language === 'hi') {
+            const result = await translateAndSummarizeArticleHindi({
+                articleTitle: article.title,
+                articleContent: full_text,
+            });
+            summaryData = { title: result.translatedTitle, importantPoints: result.summaryPoints };
+        } else {
+            const result = await summarizeArticle({
+                title: article.title,
+                full_text: full_text,
+            });
+            summaryData = { title: result.heading, importantPoints: result.important_points };
+        }
+        const ttsResult = await generateTTSAudioClip({
+            title: summaryData.title,
+            importantPoints: summaryData.importantPoints,
+            language: filters.language === 'hi' ? 'hi-IN' : 'en-IN',
+        });
+        audioRef.current.src = ttsResult.audioDataUri;
+        audioRef.current.play();
+        setAudioState(s => ({ ...s, isLoading: false, audioUrl: ttsResult.audioDataUri }));
+    } catch (err) {
+        console.error('Error in listen flow:', err);
+        toast({
+            variant: 'destructive',
+            title: 'Playback Failed',
+            description: err.message || 'Could not process or generate the audio for this article.',
+        });
+        if(audioState.isPlaylistActive) {
+            playNextInPlaylist(); // Try to play next one
+        } else {
+            handleStopAudio();
+        }
+    }
+  }
 
-      setAudioState({ ...audioState, isLoading: true, currentArticleId: articleId, progress: 0 });
-      toast({
-          title: "Generating Smart Summary...",
-          description: "Please wait while we process and prepare the audio.",
-          duration: 10000,
-      });
+  const handleListenAll = async () => {
+    if(audioState.isPlaying || audioState.isLoading) {
+        handleStopAudio();
+        return;
+    }
 
-      try {
-          const full_text = article.content || article.description || '';
-          if (!full_text) {
-              throw new Error("Article content is not available for summarization.");
-          }
+    if (news.length === 0) {
+        toast({ variant: 'destructive', title: 'No News to Play', description: 'There are no articles in the current view.' });
+        return;
+    }
 
-          let summaryData;
-          if (filters.language === 'hi') {
-              const result = await translateAndSummarizeArticleHindi({
-                  articleTitle: article.title,
-                  articleContent: full_text,
-              });
-              summaryData = { title: result.translatedTitle, importantPoints: result.summaryPoints };
-          } else {
-              const result = await summarizeArticle({
-                  title: article.title,
-                  full_text: full_text,
-              });
-              summaryData = { title: result.heading, importantPoints: result.important_points };
-          }
-          
-          const ttsResult = await generateTTSAudioClip({
-              title: summaryData.title,
-              importantPoints: summaryData.importantPoints,
-              language: filters.language === 'hi' ? 'hi-IN' : 'en-IN',
-          });
-
-          audioRef.current.src = ttsResult.audioDataUri;
-          audioRef.current.play();
-          setAudioState(s => ({ ...s, isLoading: false, audioUrl: ttsResult.audioDataUri }));
-
-      } catch (err) {
-          console.error('Error in listen flow:', err);
-          toast({
-              variant: 'destructive',
-              title: 'Playback Failed',
-              description: err.message || 'Could not process or generate the audio for this article.',
-          });
-          setAudioState({ isPlaying: false, isLoading: false, currentArticleId: null, audioUrl: null, progress: 0 });
-      }
-  };
+    playlistRef.current = news;
+    currentTrackIndexRef.current = 0;
+    setAudioState(s => ({ ...s, isPlaylistActive: true }));
+    toast({ title: 'Starting News Playlist', description: `Will play ${news.length} articles.` });
+    
+    await playAudioForArticle(playlistRef.current[0]);
+  }
 
   const handleStopAudio = () => {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = '';
     }
-    setAudioState({ isPlaying: false, isLoading: false, currentArticleId: null, audioUrl: null, progress: 0 });
+    setAudioState({ isPlaying: false, isLoading: false, currentArticleId: null, audioUrl: null, progress: 0, isPlaylistActive: false });
+    playlistRef.current = [];
+    currentTrackIndexRef.current = 0;
   }
 
   const renderArticleTitle = (article) => {
@@ -368,6 +396,14 @@ const NewsApp = () => {
     }
     return description;
   }
+  
+  const currentPlayingTitle = useMemo(() => {
+    if (!audioState.currentArticleId) return "No audio playing";
+    const article = news.find(a => a.article_id === audioState.currentArticleId) || podcastList.find(a => a.article_id === audioState.currentArticleId);
+    if (!article) return "Loading title...";
+    return article.title;
+  }, [audioState.currentArticleId, news, podcastList]);
+
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
@@ -379,6 +415,10 @@ const NewsApp = () => {
                 <p className="text-gray-600 dark:text-gray-400">Your daily brief, powered by AI</p>
             </div>
             <div className="flex items-center gap-2">
+                <button onClick={handleListenAll} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg transform hover:-translate-y-0.5" disabled={loading}>
+                    {audioState.isPlaylistActive ? <StopCircle className="w-5 h-5"/> : <Play className="w-5 h-5"/>}
+                    <span>{audioState.isPlaylistActive ? 'Stop Listening' : 'Listen to All'}</span>
+                </button>
                 <button onClick={handleCreatePodcast} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
                     <Podcast className="w-5 h-5"/>
                     <span>Create Podcast</span>
@@ -531,7 +571,10 @@ const NewsApp = () => {
           {news.map((article) => (
             <article
               key={article.article_id}
-              className="bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden"
+              className={cn(
+                "bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden",
+                audioState.currentArticleId === article.article_id && "ring-2 ring-blue-500"
+              )}
             >
               <div className="flex flex-col lg:flex-row gap-6 p-6">
                 {article.image_url && (
@@ -566,10 +609,6 @@ const NewsApp = () => {
               </div>
               <div className="bg-gray-50 dark:bg-gray-800/50 p-4 flex items-center justify-between border-t border-gray-200 dark:border-gray-700">
                 <div className="flex items-center gap-2">
-                    <button onClick={() => handleListen(article)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed" disabled={audioState.isLoading && audioState.currentArticleId !== article.article_id}>
-                      {audioState.isLoading && audioState.currentArticleId === article.article_id ? <Loader2 className="w-5 h-5 animate-spin"/> : <Play className="w-5 h-5"/>}
-                      <span>{audioState.isPlaying && audioState.currentArticleId === article.article_id ? 'Pause' : 'Listen'}</span>
-                    </button>
                     <button onClick={() => handleAddToPodcast(article)} className="p-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
                         <Plus className="w-5 h-5"/>
                     </button>
@@ -610,13 +649,14 @@ const NewsApp = () => {
         <div className="fixed bottom-0 left-0 right-0 z-50 p-4">
             <div className="max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-2xl p-4 border border-gray-200 dark:border-gray-700">
                 <div className="flex items-center gap-4">
-                    <button onClick={() => audioRef.current?.play()} className="p-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
-                      {audioState.isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
+                    <button onClick={() => audioState.isPlaying ? audioRef.current?.pause() : audioRef.current?.play()} className="p-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
+                      {audioState.isLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : (audioState.isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />)}
                     </button>
                     <div className="flex-1">
                         <p className="font-bold truncate text-gray-900 dark:text-gray-100">
-                            {news.find(a => a.article_id === audioState.currentArticleId)?.title}
+                            {currentPlayingTitle}
                         </p>
+                         <p className="text-xs text-gray-500 dark:text-gray-400">{audioState.isPlaylistActive ? `Playing ${currentTrackIndexRef.current + 1} of ${playlistRef.current.length}` : 'Single Article'}</p>
                         <div className="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mt-2">
                           <div className="absolute top-0 left-0 h-2 bg-blue-600 rounded-full" style={{ width: `${audioState.progress}%` }}></div>
                         </div>
@@ -671,5 +711,3 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
-
-    
