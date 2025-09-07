@@ -60,6 +60,11 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
   // Step 1: Generate the podcast script using a dedicated flow
   const { script } = await generatePodcastScript({ articles, language });
   
+  // Prevent calling TTS with an empty script
+  if (!script) {
+    throw new Error('Podcast script generation failed, cannot generate audio.');
+  }
+  
   // Step 2: Use the generated script to create the TTS audio
   const { media } = await ai.generate({
     model: 'googleai/gemini-2.5-flash-preview-tts',
