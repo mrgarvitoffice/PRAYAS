@@ -74,23 +74,12 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
   
   // Step 2: Use the generated script to create the TTS audio
   const { media } = await ai.generate({
-    model: 'googleai/gemini-2.5-flash-preview-tts',
-    config: {
-      responseModalities: ['AUDIO'],
-      speechConfig: {
-        multiSpeakerVoiceConfig: {
-          speakerVoiceConfigs: [
-            { speaker: 'Narrator', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Alloy' } } },
-            { speaker: 'Speaker1', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Echo' } } },
-          ],
-        },
-      },
-    },
+    model: 'googleai/gemini-2.5-flash-lite',
     prompt: script,
   });
 
   if (!media) {
-    throw new Error('No media returned from TTS generation.');
+    throw new Error('No media returned from TTS generation. The selected model may not support audio output.');
   }
 
   const audioBuffer = Buffer.from(media.url.substring(media.url.indexOf(',') + 1), 'base64');

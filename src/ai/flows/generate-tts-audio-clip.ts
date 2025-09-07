@@ -74,22 +74,12 @@ const generateTTSAudioClipFlow = ai.defineFlow({
     const {
       media
     } = await ai.generate({
-      model: 'googleai/gemini-2.5-flash-preview-tts',
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: language === 'en-IN' ? 'Algenib' : 'Ek Balayan',
-            },
-          },
-        },
-      },
+      model: 'googleai/gemini-2.5-flash-lite',
       prompt: promptText,
     });
 
     if (!media) {
-      throw new Error('No media returned from TTS generation.');
+      throw new Error('No media returned from TTS generation. The selected model may not support audio output.');
     }
 
     const audioBuffer = Buffer.from(
@@ -102,5 +92,3 @@ const generateTTSAudioClipFlow = ai.defineFlow({
     };
   }
 );
-
-    
