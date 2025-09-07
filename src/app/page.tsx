@@ -78,6 +78,11 @@ const NewsApp = () => {
   const playlistRef = useRef([]);
   const currentTrackIndexRef = useRef(0);
   const [femaleVoice, setFemaleVoice] = useState(null);
+  // Using a ref for isPlaylistActive to avoid stale closure issues in onend callback
+  const playlistActiveRef = useRef(audioState.isPlaylistActive);
+  useEffect(() => {
+    playlistActiveRef.current = audioState.isPlaylistActive;
+  }, [audioState.isPlaylistActive]);
 
   // Setup SpeechSynthesis & select a female voice
   useEffect(() => {
@@ -92,8 +97,9 @@ const NewsApp = () => {
     };
 
     if ('speechSynthesis' in window) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
+      // onvoiceschanged event might not fire on all browsers/platforms, so we call it once
       loadVoices();
+      window.speechSynthesis.onvoiceschanged = loadVoices;
     }
     
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -140,7 +146,7 @@ const NewsApp = () => {
     setAudioState(s => ({ ...s, isPlaying: true, currentArticleId: article.article_id }));
     
     utterance.onend = () => {
-      if (audioState.isPlaylistActive) {
+      if (playlistActiveRef.current) {
         playNextInPlaylist();
       } else {
         handleStopAudio();
@@ -150,7 +156,7 @@ const NewsApp = () => {
     utterance.onerror = (event) => {
         console.error('SpeechSynthesisUtterance.onerror', event);
         toast({ variant: 'destructive', title: 'Speech Error', description: event.error });
-        if(audioState.isPlaylistActive) playNextInPlaylist(); // Try next
+        if(playlistActiveRef.current) playNextInPlaylist(); // Try next
     };
 
     window.speechSynthesis.speak(utterance);
