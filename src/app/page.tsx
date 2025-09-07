@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { Article, Language } from '@/lib/types';
 import { fetchAndProcessNews } from '@/ai/flows/fetch-and-process-news';
+import { generateTTSAudioClip } from '@/ai/flows/generate-tts-audio-clip';
 import { AudioPlayerProvider, useAudioPlayer } from '@/context/audio-player-context';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
@@ -32,9 +33,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { summarizeArticle } from '@/ai/flows/summarize-article';
 import { translateAndSummarizeArticleHindi } from '@/ai/flows/translate-and-summarize-article-hindi';
-
 
 const INDIAN_STATES: Record<string, string[]> = {
   'Andhra Pradesh': ['Visakhapatnam', 'Vijayawada', 'Guntur', 'Tirupati'],
@@ -75,35 +74,56 @@ const NewsApp = () => {
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
   const [podcastList, setPodcastList] = useState<Article[]>([]);
   
-  // State for Web Speech API
+  // State for TTS playback
   const [isListeningAll, setIsListeningAll] = useState(false);
   const [currentSpokenIndex, setCurrentSpokenIndex] = useState(-1);
-  const synthRef = React.useRef<SpeechSynthesis | null>(null);
-  const utterancesRef = React.useRef<SpeechSynthesisUtterance[]>([]);
-  
-  const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+  const playlistRef = React.useRef<Article[]>([]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      synthRef.current = window.speechSynthesis;
-      const getVoices = () => {
-        const voices = synthRef.current?.getVoices() || [];
-        // Prioritize high-quality, non-local, female voices
-        const preferredVoice = 
-          voices.find(v => v.name === 'Google UK English Female') ||
-          voices.find(v => v.name === 'Samantha' && v.lang.startsWith('en')) ||
-          voices.find(v => v.lang.startsWith('en') && v.name.includes('Female')) ||
-          voices.find(v => v.lang.startsWith('en') && !v.localService) ||
-          voices.find(v => v.lang.startsWith('en')) ||
-          null;
-        setSelectedVoice(preferredVoice);
+      audioRef.current = new Audio();
+      audioRef.current.onended = () => {
+        if (isListeningAll) {
+          playNextInPlaylist();
+        }
       };
-      getVoices();
-      if (synthRef.current?.onvoiceschanged !== undefined) {
-        synthRef.current.onvoiceschanged = getVoices;
-      }
     }
-  }, []);
+  }, [isListeningAll]);
+  
+  const playNextInPlaylist = useCallback(async () => {
+    const nextIndex = currentSpokenIndex + 1;
+    if (nextIndex < playlistRef.current.length) {
+      setCurrentSpokenIndex(nextIndex);
+      const article = playlistRef.current[nextIndex];
+      const lang = filters.language;
+      const title = lang === 'hi' && article.titleHi ? article.titleHi : article.title;
+      const points = lang === 'hi' && article.importantPointsHi ? article.importantPointsHi : article.importantPoints;
+  
+      try {
+        const result = await generateTTSAudioClip({
+          title: title,
+          importantPoints: points.length > 0 ? points : [article.summary], // Fallback to summary
+          language: lang === 'hi' ? 'hi-IN' : 'en-IN',
+        });
+        if (audioRef.current) {
+          audioRef.current.src = result.audioDataUri;
+          audioRef.current.play();
+        }
+      } catch (e) {
+        console.error("Error generating audio for playlist item", e);
+        toast({
+          variant: "destructive",
+          title: "Audio Generation Failed",
+          description: `Could not generate audio for "${title}". Skipping.`,
+        });
+        playNextInPlaylist(); // Skip to the next one
+      }
+    } else {
+      setIsListeningAll(false);
+      setCurrentSpokenIndex(-1);
+    }
+  }, [currentSpokenIndex, filters.language, toast]);
 
 
   const processAndSetNews = useCallback(async (articles: Article[]) => {
@@ -236,41 +256,22 @@ const NewsApp = () => {
   };
   
   const toggleListenAll = () => {
-    const synth = synthRef.current;
-    if (!synth || news.length === 0) return;
-
     if (isListeningAll) {
-      synth.cancel();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+      }
       setIsListeningAll(false);
       setCurrentSpokenIndex(-1);
-    } else {
-      const textsToRead = news.map(article => {
-        const title = filters.language === 'hi' && article.titleHi ? article.titleHi : article.title;
-        return title;
-      });
-
-      utterancesRef.current = textsToRead.map((text, index) => {
-        const utterance = new SpeechSynthesisUtterance(text);
-        if (selectedVoice) {
-            utterance.voice = selectedVoice;
-        }
-        // Explicitly setting the language can improve pronunciation.
-        utterance.lang = filters.language === 'hi' ? 'hi-IN' : 'en-US';
-        utterance.onstart = () => setCurrentSpokenIndex(index);
-        utterance.onend = () => {
-            if (index === textsToRead.length - 1) {
-                setIsListeningAll(false);
-                setCurrentSpokenIndex(-1);
-            }
-        };
-        return utterance;
-      });
-      
+      playlistRef.current = [];
+    } else if (news.length > 0) {
+      toast({title: "Preparing audio stream...", description: "This may take a moment."})
+      playlistRef.current = news;
       setIsListeningAll(true);
-      utterancesRef.current.forEach(u => synth.speak(u));
+      setCurrentSpokenIndex(-1); // Will be incremented to 0 by playNext
+      playNextInPlaylist();
     }
   };
-
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 transition-colors duration-300">
