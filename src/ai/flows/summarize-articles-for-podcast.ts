@@ -58,7 +58,7 @@ export async function summarizeArticlesForPodcast(input: SummarizeArticlesForPod
 // Define the prompt for summarizing a single article.
 const summarizationPrompt = ai.definePrompt({
   name: 'summarizeArticleForPodcastPrompt',
-  model: 'googleai/gemini-1.5-pro-latest',
+  model: 'googleai/gemini-2.5-flash-lite',
   input: { schema: z.object({ title: z.string(), content: z.string() }) },
   output: { schema: z.object({ summary: z.string() }) },
   prompt: `You are an expert news summarizer. Create a concise, high-quality summary for the following news article. The summary should be fluent, well-written, and capture the key points of the article.
