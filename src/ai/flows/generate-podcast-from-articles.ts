@@ -65,7 +65,7 @@ async function toWav(
 // Prompt to generate the dialogue script.
 const dialoguePrompt = ai.definePrompt({
     name: 'generatePodcastScriptForTtsPrompt',
-    model: 'googleai/gemini-1.5-flash-latest',
+    model: 'googleai/gemini-1.5-pro-latest',
     input: { schema: z.object({ articleSnippets: z.string() }) },
     output: { format: 'text' },
     prompt: `You are an expert multilingual podcast scriptwriter. Your primary task is to convert the following news articles into a natural-sounding, two-person dialogue script.
