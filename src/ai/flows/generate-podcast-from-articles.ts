@@ -35,8 +35,11 @@ export async function generatePodcastFromArticles(input: GeneratePodcastFromArti
     return await generatePodcastScriptAndAudioFlow({ articles });
  } catch (error: any) {
     console.error("[AI ACTION Error - Podcast] Top-level flow failed:", error);
+    let errorMessage = error.message || 'An unknown error occurred during podcast generation.';
+     if (error.message.includes('429')) {
+      errorMessage = 'You have exceeded the daily limit for podcast generation. Please try again tomorrow.';
+    }
     // Pass a clear, user-friendly error message.
-    const errorMessage = error.message || 'An unknown error occurred during podcast generation.';
     throw new Error(errorMessage);
   }
 }
