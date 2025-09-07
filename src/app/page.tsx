@@ -268,14 +268,16 @@ const NewsApp = () => {
     utterance.lang = langCode;
 
     // Find the best voice available for the selected language
-    const voice = voices.find(v => v.lang === langCode && v.name.includes('Google')) ||
-                  voices.find(v => v.lang === langCode && v.name.includes('Natural')) ||
-                  voices.find(v => v.lang === langCode && v.localService) ||
-                  voices.find(v => v.lang === langCode);
+    // Prioritize the Google voices as they are often higher quality
+    const bestVoice = voices.find(v => v.lang === langCode && v.name.includes('Google')) ||
+                      voices.find(v => v.lang === langCode && v.name.includes('Natural')) ||
+                      voices.find(v => v.lang === langCode && v.localService) ||
+                      voices.find(v => v.lang === langCode);
 
-    if (voice) {
-      utterance.voice = voice;
+    if (bestVoice) {
+      utterance.voice = bestVoice;
     }
+
 
     utterance.onstart = () => {
       setIsSpeakingHeadlines(true);
