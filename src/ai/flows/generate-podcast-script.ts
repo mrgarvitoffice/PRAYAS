@@ -63,5 +63,10 @@ const generatePodcastScriptFlow = ai.defineFlow({
     `,
   });
 
-  return { script: output!.text! };
+  if (!output || !output.text) {
+    console.error("Podcast script generation failed, AI returned no output.");
+    return { script: '' };
+  }
+  
+  return { script: output.text };
 });
