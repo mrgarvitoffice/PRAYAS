@@ -67,6 +67,8 @@ const INDIAN_STATES: Record<string, string[]> = {
   'West Bengal': ['Kolkata', 'Howrah', 'Durgapur', 'Asansol']
 };
 
+const INITIAL_ARTICLES_COUNT = 6;
+
 const NewsApp = () => {
   const [news, setNews] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,6 +95,8 @@ const NewsApp = () => {
   const utteranceRef = React.useRef<SpeechSynthesisUtterance | null>(null);
 
   const [processingArticleIds, setProcessingArticleIds] = useState<Set<string>>(new Set());
+  
+  const [visibleArticlesCount, setVisibleArticlesCount] = useState(INITIAL_ARTICLES_COUNT);
 
   useEffect(() => {
     const handleVoicesChanged = () => {
@@ -111,6 +115,7 @@ const NewsApp = () => {
   const fetchNewsCallback = useCallback(async (currentFilters: typeof filters) => {
     setLoading(true);
     setError('');
+    setVisibleArticlesCount(INITIAL_ARTICLES_COUNT); // Reset visible count on new fetch
     try {
       const countryCode = currentFilters.region === 'world' ? 'us' : 'in';
       let fetchedArticles = await fetchAndProcessNews({
@@ -200,13 +205,13 @@ const NewsApp = () => {
 
   useEffect(() => {
     if (filters.language === 'hi') {
-      news.forEach(article => {
+      news.slice(0, visibleArticlesCount).forEach(article => {
         if (!article.titleHi && !processingArticleIds.has(article.id)) {
            processArticleForDisplay(article);
         }
       });
     }
-  }, [filters.language, news, processingArticleIds, processArticleForDisplay]);
+  }, [filters.language, news, processingArticleIds, processArticleForDisplay, visibleArticlesCount]);
 
 
   const clearFilters = () => {
@@ -226,9 +231,11 @@ const NewsApp = () => {
     if (!filters.state || filters.region !== 'india') return [];
     return INDIAN_STATES[filters.state] || [];
   }, [filters.state, filters.region]);
+
+  const visibleNews = useMemo(() => news.slice(0, visibleArticlesCount), [news, visibleArticlesCount]);
   
   const handleCreatePodcast = () => {
-    if (news.length > 0) {
+    if (visibleNews.length > 0) {
       setGeneratedPodcastAudio(null);
       setIsPodcastModalOpen(true);
     } else {
@@ -241,14 +248,14 @@ const NewsApp = () => {
   };
 
   const handleGeneratePodcast = async () => {
-    if (news.length === 0) return;
+    if (visibleNews.length === 0) return;
     setIsGeneratingPodcast(true);
     setGeneratedPodcastAudio(null);
     try {
       toast({ title: 'Generating your podcast...', description: 'This may take a minute or two.' });
       
       const articlesForPodcast = await Promise.all(
-        news.map(async (article) => {
+        visibleNews.map(async (article) => {
           if ((podcastLanguage === 'hi' || podcastLanguage === 'bilingual') && !article.titleHi) {
              const hindiSummary = await translateAndSummarizeArticleHindi({
                 articleTitle: article.title,
@@ -295,7 +302,7 @@ const NewsApp = () => {
       return;
     }
 
-    const textToSpeak = news
+    const textToSpeak = visibleNews
       .map(a => {
         const title = filters.language === 'hi' && a.titleHi ? a.titleHi : a.title;
         const summary = filters.language === 'hi' && a.summaryHi ? a.summaryHi : a.summary;
@@ -351,7 +358,7 @@ const NewsApp = () => {
 
     window.speechSynthesis.speak(utterance);
 
-  }, [news, filters.language, toast, voices, isSpeakingHeadlines, isPausedHeadlines]);
+  }, [visibleNews, filters.language, toast, voices, isSpeakingHeadlines, isPausedHeadlines]);
   
   const stopReadingHeadlines = () => {
     if (utteranceRef.current) {
@@ -383,7 +390,7 @@ const NewsApp = () => {
               </p>
             </div>
              <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={readAllHeadlines} disabled={news.length === 0 || audioPlayer.isPlaying}>
+                <Button variant="outline" onClick={readAllHeadlines} disabled={visibleNews.length === 0 || audioPlayer.isPlaying}>
                     {isSpeakingHeadlines && !isPausedHeadlines ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
                     {isSpeakingHeadlines && !isPausedHeadlines ? 'Pause' : isPausedHeadlines ? 'Resume' : 'Read Headlines'}
                 </Button>
@@ -392,7 +399,7 @@ const NewsApp = () => {
                     <StopCircle className="h-5 w-5" />
                   </Button>
                 )}
-              <Button variant="outline" onClick={handleCreatePodcast} disabled={news.length === 0}>
+              <Button variant="outline" onClick={handleCreatePodcast} disabled={visibleNews.length === 0}>
                 <Podcast className="mr-2 h-4 w-4" />
                 Create Podcast
               </Button>
@@ -518,97 +525,106 @@ const NewsApp = () => {
               </div>
             </div>
           ) : news.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-              {news.map((article) => {
-                const isCurrentlyPlaying = audioPlayer.currentArticle?.id === article.id && audioPlayer.isPlaying;
-                const isCurrentlyLoadingAudio = audioPlayer.currentArticle?.id === article.id && audioPlayer.isLoading;
-                const isCurrentlyProcessingText = processingArticleIds.has(article.id);
-                
-                const title = filters.language === 'hi' && article.titleHi ? article.titleHi : article.title;
-                const summary = filters.language === 'hi' && article.summaryHi ? article.summaryHi : article.summary;
-                const importantPoints = filters.language === 'hi' && article.importantPointsHi.length > 0 ? article.importantPointsHi : article.importantPoints;
-                const isLoading = isCurrentlyLoadingAudio || isCurrentlyProcessingText;
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+                {visibleNews.map((article) => {
+                  const isCurrentlyPlaying = audioPlayer.currentArticle?.id === article.id && audioPlayer.isPlaying;
+                  const isCurrentlyLoadingAudio = audioPlayer.currentArticle?.id === article.id && audioPlayer.isLoading;
+                  const isCurrentlyProcessingText = processingArticleIds.has(article.id);
+                  
+                  const title = filters.language === 'hi' && article.titleHi ? article.titleHi : article.title;
+                  const summary = filters.language === 'hi' && article.summaryHi ? article.summaryHi : article.summary;
+                  const importantPoints = filters.language === 'hi' && article.importantPointsHi.length > 0 ? article.importantPointsHi : article.importantPoints;
+                  const isLoading = isCurrentlyLoadingAudio || isCurrentlyProcessingText;
 
-                const needsProcessing = (filters.language === 'en' && article.importantPoints.length === 0) || (filters.language === 'hi' && !article.titleHi);
+                  const needsProcessing = (filters.language === 'en' && article.importantPoints.length === 0) || (filters.language === 'hi' && !article.titleHi);
 
-                return (
-                  <article
-                    key={article.id}
-                    className={cn(
-                      "bg-white dark:bg-slate-800/50 rounded-xl shadow-md hover:shadow-2xl transition-all duration-300 flex flex-col overflow-hidden border border-slate-200 dark:border-slate-700/50 group",
-                      isCurrentlyPlaying && "ring-2 ring-indigo-500"
-                    )}
-                  >
-                    {article.media.image && (
-                      <div className="relative h-48 w-full overflow-hidden">
-                        <a href={article.contentUrl} target="_blank" rel="noopener noreferrer">
-                          <img
-                            src={article.media.image}
-                            alt={title}
-                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = `https://picsum.photos/600/400?random=${article.id}`;
-                            }}
-                          />
-                           <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                        </a>
-                      </div>
-                    )}
-                    <div className="p-6 flex-1 flex flex-col">
-                      <h2 className="text-xl font-bold text-slate-800 dark:text-white leading-tight mb-3 font-headline line-clamp-3">
-                         <a href={article.contentUrl} target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
-                          {title}
-                         </a>
-                      </h2>
-                       <div className="flex items-center flex-wrap gap-x-4 gap-y-2 text-xs text-slate-500 dark:text-slate-400 mb-4">
-                        {article.source.name && (
-                          <span className="font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">{article.source.name}</span>
-                        )}
-                         <span className="text-slate-400 dark:text-slate-500">•</span>
-                        {article.publishedAt && (
-                          <div className="flex items-center gap-1.5"><Calendar className="w-3 h-3" /><span>{article.publishedAt}</span></div>
-                        )}
-                       
-                      </div>
-                      
-                      {isLoading && filters.language === 'hi' ? (
-                          <p className="text-slate-600 dark:text-slate-300 leading-relaxed flex-1">Translating...</p>
-                      ) : importantPoints.length > 0 ? (
-                        <ul className="space-y-2 text-slate-600 dark:text-slate-300 leading-relaxed flex-1 list-disc pl-5">
-                          {importantPoints.map((point, index) => (
-                            <li key={index}>{point}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-slate-600 dark:text-slate-300 leading-relaxed flex-1">{summary}</p>
+                  return (
+                    <article
+                      key={article.id}
+                      className={cn(
+                        "bg-white dark:bg-slate-800/50 rounded-xl shadow-md hover:shadow-2xl transition-all duration-300 flex flex-col overflow-hidden border border-slate-200 dark:border-slate-700/50 group",
+                        isCurrentlyPlaying && "ring-2 ring-indigo-500"
                       )}
-
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-800 p-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700/50">
-                      <div className="flex items-center gap-2">
-                         <button onClick={() => audioPlayer.playArticle(article, filters.language)} disabled={isLoading || isSpeakingHeadlines} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Listen to Article">
-                            {isLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Headphones className="w-5 h-5"/>}
-                         </button>
-                         {needsProcessing && !article.audioDataUri && (
-                           <Tooltip>
-                             <TooltipTrigger asChild>
-                               <Info className="w-4 h-4 text-blue-500 cursor-help" />
-                             </TooltipTrigger>
-                             <TooltipContent>
-                               <p>Click Listen for an AI-powered summary!</p>
-                             </TooltipContent>
-                           </Tooltip>
+                    >
+                      {article.media.image && (
+                        <div className="relative h-48 w-full overflow-hidden">
+                          <a href={article.contentUrl} target="_blank" rel="noopener noreferrer">
+                            <img
+                              src={article.media.image}
+                              alt={title}
+                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = `https://picsum.photos/600/400?random=${article.id}`;
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                          </a>
+                        </div>
+                      )}
+                      <div className="p-6 flex-1 flex flex-col">
+                        <h2 className="text-xl font-bold text-slate-800 dark:text-white leading-tight mb-3 font-headline line-clamp-3">
+                          <a href={article.contentUrl} target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+                            {title}
+                          </a>
+                        </h2>
+                        <div className="flex items-center flex-wrap gap-x-4 gap-y-2 text-xs text-slate-500 dark:text-slate-400 mb-4">
+                          {article.source.name && (
+                            <span className="font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">{article.source.name}</span>
                           )}
+                          <span className="text-slate-400 dark:text-slate-500">•</span>
+                          {article.publishedAt && (
+                            <div className="flex items-center gap-1.5"><Calendar className="w-3 h-3" /><span>{article.publishedAt}</span></div>
+                          )}
+                        
+                        </div>
+                        
+                        {isLoading && filters.language === 'hi' ? (
+                            <p className="text-slate-600 dark:text-slate-300 leading-relaxed flex-1">Translating...</p>
+                        ) : importantPoints.length > 0 ? (
+                          <ul className="space-y-2 text-slate-600 dark:text-slate-300 leading-relaxed flex-1 list-disc pl-5">
+                            {importantPoints.map((point, index) => (
+                              <li key={index}>{point}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-slate-600 dark:text-slate-300 leading-relaxed flex-1">{summary}</p>
+                        )}
 
-                         <a href={article.contentUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 flex items-center gap-1.5">
-                            Read More <ExternalLink className="w-4 h-4" />
-                         </a>
                       </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
+                      <div className="bg-slate-50 dark:bg-slate-800 p-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700/50">
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => audioPlayer.playArticle(article, filters.language)} disabled={isLoading || isSpeakingHeadlines} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Listen to Article">
+                              {isLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Headphones className="w-5 h-5"/>}
+                          </button>
+                          {needsProcessing && !article.audioDataUri && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Info className="w-4 h-4 text-blue-500 cursor-help" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Click Listen for an AI-powered summary!</p>
+                              </TooltipContent>
+                            </Tooltip>
+                            )}
+
+                          <a href={article.contentUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 flex items-center gap-1.5">
+                              Read More <ExternalLink className="w-4 h-4" />
+                          </a>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+              {visibleArticlesCount < news.length && (
+                  <div className="text-center mt-8">
+                      <Button onClick={() => setVisibleArticlesCount(news.length)}>
+                          Load More
+                      </Button>
+                  </div>
+              )}
+            </>
           ) : (
              <div className="text-center py-20">
                 <Rss className="w-16 h-16 mx-auto text-slate-400 mb-4" />
@@ -626,7 +642,7 @@ const NewsApp = () => {
               <DialogDescription>
                 {generatedPodcastAudio
                   ? 'Your podcast is ready! You can now play it below or download it.'
-                  : `A podcast will be generated from the ${news.length} currently visible articles. Choose a language for the audio.`}
+                  : `A podcast will be generated from the ${visibleNews.length} currently visible articles. Choose a language for the audio.`}
               </DialogDescription>
             </DialogHeader>
 
@@ -656,7 +672,7 @@ const NewsApp = () => {
               <>
                 <div className="max-h-60 overflow-y-auto p-1 my-4 border rounded-md">
                   <ul className="space-y-2">
-                    {news.map((article, index) => (
+                    {visibleNews.map((article, index) => (
                       <li key={article.id} className="flex items-center justify-between p-2 rounded-md bg-muted">
                         <span className="truncate pr-4 text-sm">
                           {index + 1}. {filters.language === 'hi' && article.titleHi ? article.titleHi : article.title}
@@ -702,3 +718,5 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
+
+    
