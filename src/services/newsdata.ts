@@ -11,13 +11,11 @@ const API_BASE_URL = 'https://newsdata.io/api/1/news';
  * Fetches news articles from the NewsData.io API.
  * @param category The search category for articles.
  * @param country The country to fetch news from.
- * @param size The number of articles to fetch.
  * @returns A promise that resolves to the API response.
  */
 export async function fetchNews(
   category: string = 'top',
-  country: string = 'in',
-  size: number = 11
+  country: string = 'in'
 ): Promise<NewsDataResponse> {
   const apiKey = process.env.NEWSDATA_API_KEY;
   if (!apiKey) {
@@ -27,19 +25,16 @@ export async function fetchNews(
   const params = new URLSearchParams({
     apikey: apiKey,
     language: 'en',
+    country: country.toLowerCase(),
   });
 
+  // The API requires either `q` or `category`, but not both.
   if (category && category.toLowerCase() !== 'all') {
     params.set('category', category.toLowerCase());
   } else {
+    // Use a general query for the 'All' category.
     params.set('q', 'top');
   }
-
-  params.set('country', country.toLowerCase());
-  // The API expects 'size' as a number, but URLSearchParams stringifies it.
-  // The API documentation implies it should be a numeric value in the query string.
-  params.set('size', size.toString());
-
 
   const url = `${API_BASE_URL}?${params.toString()}`;
 
@@ -60,7 +55,7 @@ export async function fetchNews(
         console.error('API Error Response:', errorText);
         try {
             const errorJson = JSON.parse(errorText);
-            const errorMessage = (errorJson.results && errorJson.results.message) || errorJson.message || errorText;
+            const errorMessage = (errorJson.results && errorJson.results.message) || errorJson.message || `API Error (${response.status})`;
             throw new Error(`API Error (${response.status}): ${errorMessage}`);
         } catch (parseError) {
             throw new Error(`API Error (${response.status}): ${errorText}`);
