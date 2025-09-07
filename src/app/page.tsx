@@ -267,9 +267,9 @@ const NewsApp = () => {
     const langCode = filters.language === 'hi' ? 'hi-IN' : 'en-US';
     utterance.lang = langCode;
 
-    // Find the best voice
-    const voice = voices.find(v => v.name.includes('Google') && v.lang === langCode) ||
-                  voices.find(v => v.name.includes('Natural') && v.lang.startsWith(filters.language)) ||
+    // Find the best voice available for the selected language
+    const voice = voices.find(v => v.lang === langCode && v.name.includes('Google')) ||
+                  voices.find(v => v.lang === langCode && v.name.includes('Natural')) ||
                   voices.find(v => v.lang === langCode && v.localService) ||
                   voices.find(v => v.lang === langCode);
 
@@ -639,5 +639,3 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
-
-    
