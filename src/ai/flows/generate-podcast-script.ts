@@ -2,6 +2,7 @@
 'use server';
 /**
  * @fileOverview This file defines a Genkit flow for generating a podcast script from a list of articles.
+ * It follows a robust pattern with a dedicated prompt for content generation.
  *
  * It exports:
  * - `generatePodcastScript`: The main function to generate the script.
@@ -24,11 +25,16 @@ const GeneratePodcastScriptOutputSchema = z.object({
 export type GeneratePodcastScriptOutput = z.infer<typeof GeneratePodcastScriptOutputSchema>;
 
 export async function generatePodcastScript(input: GeneratePodcastScriptInput): Promise<GeneratePodcastScriptOutput> {
-  return generatePodcastScriptFlow(input);
+  try {
+    return await generatePodcastScriptFlow(input);
+  } catch (error: any) {
+    console.error("[AI Action Error - Podcast Script] Flow failed:", error);
+    throw new Error(`Failed to generate podcast script. Error: ${error.message}`);
+  }
 }
 
 const dialoguePrompt = ai.definePrompt({
-    name: 'generateDialogueForTtsPrompt',
+    name: 'generatePodcastScriptPrompt',
     model: 'googleai/gemini-2.5-flash-lite',
     input: { schema: z.object({ articleSnippets: z.string(), language: z.string() }) },
     output: { format: 'text' }, // Request raw text for easier cleanup.
@@ -39,7 +45,7 @@ The user has specified the desired language as: **{{{language}}}**.
 You **MUST** write the entire dialogue script in that same language.
 - If 'en', write in English.
 - If 'hi', write in Hindi.
-- If 'bilingual', write a mix of English and Hindi for each segment.
+- If 'bilingual', write a mix of English and Hindi for each segment, starting with an English intro.
 
 The dialogue should be between "Narrator" (a professional news anchor) and "Speaker1" (a knowledgeable correspondent). The Narrator provides introductions and transitions, while Speaker1 delivers the core news details.
 
@@ -88,8 +94,14 @@ const generatePodcastScriptFlow = ai.defineFlow({
     return `Source: ${source}\nContent: ${content}`;
   }).join('\n\n---\n\n');
 
-  const llmResponse = await dialoguePrompt({ articleSnippets, language });
-  let dialogueScript = llmResponse.text.trim();
+  const { output } = await prompt({ articleSnippets, language });
+
+  if (!output) {
+      console.error("[AI Flow Error - Podcast Script] AI returned empty or invalid data:", output);
+      return { script: '' };
+  }
+  
+  let dialogueScript = output.trim();
   
   // Self-healing: Clean up the script to ensure it only contains valid dialogue lines.
   dialogueScript = dialogueScript
@@ -99,7 +111,8 @@ const generatePodcastScriptFlow = ai.defineFlow({
 
   if (!dialogueScript) {
     console.error("Podcast script generation failed, AI returned no valid script lines.");
-    return { script: '' };
+    // This will be caught by the calling flow.
+    throw new Error("AI failed to generate a valid script from the provided articles.");
   }
   
   return { script: dialogueScript };

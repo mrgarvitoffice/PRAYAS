@@ -2,8 +2,7 @@
 'use server';
 /**
  * @fileOverview This file defines a Genkit flow for generating a podcast episode from a list of news articles.
- * It first generates a two-person dialogue script from the articles, then uses a text-to-speech
- * model to generate a multi-speaker audio file.
+ * It orchestrates a two-step process: first generating a script, then generating audio.
  *
  * It exports:
  * - `generatePodcastFromArticles`: The main function to generate the podcast.
@@ -34,8 +33,8 @@ export async function generatePodcastFromArticles(input: GeneratePodcastFromArti
  } catch (error: any) {
     console.error("[AI ACTION Error - Podcast] Flow failed:", error);
     const errorMessage = error.message || "An unexpected error occurred.";
-    if (errorMessage.toLowerCase().includes("dialogue script")) {
-      throw new Error("The AI failed to create a discussion script from the provided text. This can sometimes happen with very short or complex content. Please try rephrasing or using a longer text.");
+    if (errorMessage.toLowerCase().includes("script")) {
+      throw new Error("The AI failed to create a podcast script from the provided articles. This can sometimes happen if the content is too short or complex.");
     }
     throw new Error(`Failed to generate podcast audio. Error: ${errorMessage}`);
   }
@@ -68,24 +67,17 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
   outputSchema: GeneratePodcastFromArticlesOutputSchema,
 }, async ({ articles, language }) => {
   
-  // Step 1: Generate the podcast script using a dedicated flow
+  // Step 1: Generate the podcast script using the dedicated, robust flow.
   console.log('[AI Flow - Podcast] Generating dialogue script...');
-  let script;
-  try {
-    const scriptResult = await generatePodcastScript({ articles, language });
-    script = scriptResult.script;
-  } catch (e) {
-    console.error("[AI Flow - Podcast] Script generation failed", e);
-    throw new Error(`Failed to generate podcast script: ${e instanceof Error ? e.message : 'Unknown error'}`);
-  }
+  const { script } = await generatePodcastScript({ articles, language });
   
-  // Prevent calling TTS with an empty script
+  // Prevent calling TTS with an empty script. The script generation flow will throw an error if it fails.
   if (!script) {
-     throw new Error("Failed to generate a valid dialogue script from the content.");
+     throw new Error("The podcast script generation returned an empty script.");
   }
-  console.log('[AI Flow - Podcast] Dialogue script generated and cleaned successfully.');
+  console.log('[AI Flow - Podcast] Dialogue script generated successfully.');
   
-  // Step 2: Use the generated script to create the TTS audio
+  // Step 2: Use the generated script to create the TTS audio.
   console.log('[AI Flow - Podcast] Generating multi-speaker TTS...');
   const { media } = await ai.generate({
     model: 'googleai/gemini-2.5-flash-preview-tts',
