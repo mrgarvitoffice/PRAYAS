@@ -102,7 +102,8 @@ const NewsApp = () => {
   const [isSpeakingHeadlines, setIsSpeakingHeadlines] = useState(false);
   const [isPausedHeadlines, setIsPausedHeadlines] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const headlineUtterancesRef = useRef<SpeechSynthesisUtterance[]>([]);
+  
   const [isSpeakingPodcast, setIsSpeakingPodcast] = useState(false);
   const [isPausedPodcast, setIsPausedPodcast] = useState(false);
   const podcastUtteranceRef = useRef<SpeechSynthesisUtterance[]>([]);
@@ -373,68 +374,68 @@ const NewsApp = () => {
       return;
     }
 
-    const textToSpeak = visibleNews
-      .map(a => {
+    const textsToSpeak = visibleNews.map(a => {
         const title = filters.language === 'hi' && a.titleHi ? a.titleHi : a.title;
         const summary = filters.language === 'hi' && a.summaryHi ? a.summaryHi : a.summary;
         return `${title}. ${summary}`;
-      })
-      .filter(Boolean)
-      .join('. Next. ');
+      }).filter(Boolean);
 
-    if (!textToSpeak) {
+    if (textsToSpeak.length === 0) {
       toast({ title: 'No content to read', description: 'There are no articles with headlines or summaries to read out.' });
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    utteranceRef.current = utterance;
-
     const langCode = filters.language === 'hi' ? 'hi-IN' : 'en-US';
-    utterance.lang = langCode;
-
     const bestVoice = voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('google')) ||
                       voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('natural')) ||
                       voices.find(v => v.lang === langCode && v.localService) ||
                       voices.find(v => v.lang === langCode);
 
-    if (bestVoice) {
-      utterance.voice = bestVoice;
-    }
+    const utterances = textsToSpeak.map((text, index) => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = langCode;
+        if (bestVoice) utterance.voice = bestVoice;
 
+        utterance.onstart = () => {
+            setIsSpeakingHeadlines(true);
+            setIsPausedHeadlines(false);
+        };
+        
+        utterance.onend = () => {
+            if (index === textsToSpeak.length - 1) {
+                setIsSpeakingHeadlines(false);
+                setIsPausedHeadlines(false);
+                headlineUtterancesRef.current = [];
+            }
+        };
 
-    utterance.onstart = () => {
-      setIsSpeakingHeadlines(true);
-      setIsPausedHeadlines(false);
-    };
+        utterance.onerror = (event) => {
+            console.error('SpeechSynthesisUtterance.onerror', event);
+            toast({
+                variant: "destructive",
+                title: "Speech Error",
+                description: `Could not read headlines. Error: ${event.error}`,
+            });
+            setIsSpeakingHeadlines(false);
+            setIsPausedHeadlines(false);
+        };
+        return utterance;
+    });
 
-    utterance.onend = () => {
-      setIsSpeakingHeadlines(false);
-      setIsPausedHeadlines(false);
-      utteranceRef.current = null;
-    };
-
-    utterance.onerror = (event) => {
-        console.error('SpeechSynthesisUtterance.onerror', event);
-        toast({
-            variant: "destructive",
-            title: "Speech Error",
-            description: `Could not read headlines. Error: ${event.error}`,
-        });
-        setIsSpeakingHeadlines(false);
-        setIsPausedHeadlines(false);
-    };
-
-    window.speechSynthesis.speak(utterance);
+    headlineUtterancesRef.current = utterances;
+    setIsSpeakingHeadlines(true);
+    setIsPausedHeadlines(false);
+    window.speechSynthesis.cancel();
+    utterances.forEach(u => window.speechSynthesis.speak(u));
 
   }, [visibleNews, filters.language, toast, voices, isSpeakingHeadlines, isPausedHeadlines]);
   
   const stopReadingHeadlines = () => {
-    if (utteranceRef.current) {
+    if (window.speechSynthesis.speaking) {
         window.speechSynthesis.cancel();
         setIsSpeakingHeadlines(false);
         setIsPausedHeadlines(false);
-        utteranceRef.current = null;
+        headlineUtterancesRef.current = [];
     }
   };
   
@@ -871,3 +872,5 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
+
+    
