@@ -27,6 +27,37 @@ export async function generatePodcastScript(input: GeneratePodcastScriptInput): 
   return generatePodcastScriptFlow(input);
 }
 
+const dialoguePrompt = ai.definePrompt({
+    name: 'generateDialogueForTtsPrompt',
+    model: 'googleai/gemini-2.5-flash-lite',
+    input: { schema: z.object({ articleSnippets: z.string(), language: z.string() }) },
+    output: { format: 'text' }, // Request raw text for easier cleanup.
+    prompt: `You are an expert multilingual podcast scriptwriter. Your task is to convert the following news articles into a natural-sounding, two-person dialogue script.
+
+**CRUCIAL INSTRUCTION: LANGUAGE ADHERENCE**
+The user has specified the desired language as: **{{{language}}}**.
+You **MUST** write the entire dialogue script in that same language.
+- If 'en', write in English.
+- If 'hi', write in Hindi.
+- If 'bilingual', write a mix of English and Hindi for each segment.
+
+The dialogue should be between "Narrator" (a professional news anchor) and "Speaker1" (a knowledgeable correspondent). The Narrator provides introductions and transitions, while Speaker1 delivers the core news details.
+
+**CRITICAL FORMATTING RULE:** The output MUST be a script formatted *exactly* like this, with each line starting with "Narrator:" or "Speaker1:".
+Narrator: [Introductory line in specified language]
+Speaker1: [First news item in specified language]
+...and so on.
+
+Do NOT add any other text, introductions, or summaries. The entire output should be just the dialogue script.
+
+News Articles to Convert:
+---
+{{{articleSnippets}}}
+---
+
+Please provide the dialogue script below in the specified language.`
+});
+
 const generatePodcastScriptFlow = ai.defineFlow({
   name: 'generatePodcastScriptFlow',
   inputSchema: GeneratePodcastScriptInputSchema,
@@ -57,29 +88,19 @@ const generatePodcastScriptFlow = ai.defineFlow({
     return `Source: ${source}\nContent: ${content}`;
   }).join('\n\n---\n\n');
 
-  const { output } = await ai.generate({
-    model: 'googleai/gemini-2.5-flash-lite',
-    prompt: `You are a podcast script writer. Create a compelling podcast script from the following news articles.
+  const llmResponse = await dialoguePrompt({ articleSnippets, language });
+  let dialogueScript = llmResponse.text.trim();
+  
+  // Self-healing: Clean up the script to ensure it only contains valid dialogue lines.
+  dialogueScript = dialogueScript
+    .split('\n')
+    .filter(line => line.startsWith('Narrator:') || line.startsWith('Speaker1:'))
+    .join('\n');
 
-    Instructions:
-    1.  Start with a friendly intro: "Narrator: Welcome to your AI news podcast. Here are today's top stories."
-    2.  For each article, create a segment.
-    3.  Introduce each segment with "Narrator: Next up, from [Source Name]."
-    4.  The headline should be read by "Speaker1". Format: "Speaker1: [Article Title]."
-    5.  The summary should be read by the "Narrator". Format: "Narrator: [Article Summary]."
-    6.  If the language is bilingual, the Hindi part should follow the English part for each article.
-    7.  Create smooth, natural transitions.
-    8.  End with a concluding line like "Narrator: That's all for today's briefing. Thanks for listening."
-
-    Articles:
-    ${articleSnippets}
-    `,
-  });
-
-  if (!output || !output.text) {
-    console.error("Podcast script generation failed, AI returned no output.");
+  if (!dialogueScript) {
+    console.error("Podcast script generation failed, AI returned no valid script lines.");
     return { script: '' };
   }
   
-  return { script: output.text };
+  return { script: dialogueScript };
 });
