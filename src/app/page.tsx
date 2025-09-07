@@ -85,10 +85,9 @@ const NewsApp = () => {
   const audioPlayer = useAudioPlayer();
 
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
-  const [isGeneratingPodcast, setIsGeneratingPodcast] = useState(false);
+  const [isGeneratingPodcastScript, setIsGeneratingPodcastScript] = useState(false);
   const [generatedPodcastScript, setGeneratedPodcastScript] = useState<string | null>(null);
-
-
+  
   const [isSpeakingHeadlines, setIsSpeakingHeadlines] = useState(false);
   const [isPausedHeadlines, setIsPausedHeadlines] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -261,7 +260,7 @@ const NewsApp = () => {
 
   const handleGeneratePodcastScript = async () => {
     if (news.length === 0) return;
-    setIsGeneratingPodcast(true);
+    setIsGeneratingPodcastScript(true);
     setGeneratedPodcastScript(null);
     try {
       toast({ title: 'Generating your discussion script...', description: 'Preparing articles and writing dialogue...' });
@@ -280,11 +279,10 @@ const NewsApp = () => {
         description: errorMessage,
       });
     } finally {
-      setIsGeneratingPodcast(false);
+      setIsGeneratingPodcastScript(false);
     }
   };
-
-
+  
   const readAllHeadlines = useCallback(() => {
     if (isSpeakingHeadlines && !isPausedHeadlines) {
       window.speechSynthesis.pause();
@@ -705,7 +703,7 @@ const NewsApp = () => {
               </DialogDescription>
             </DialogHeader>
 
-            {isGeneratingPodcast ? (
+            {isGeneratingPodcastScript ? (
               <div className="flex flex-col items-center justify-center my-8">
                 <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
                 <p className="mt-4 text-slate-500">Generating your AI discussion, please wait...</p>
@@ -713,16 +711,16 @@ const NewsApp = () => {
             ) : generatedPodcastScript ? (
               <div className="my-4 space-y-4">
                 <div className="flex items-center justify-center gap-4">
-                  <Button onClick={playPodcastScript} variant="outline" size="lg">
-                    {isSpeakingPodcast && !isPausedPodcast ? <Pause className="mr-2 h-5 w-5" /> : <Play className="mr-2 h-5 w-5" />}
-                    {isSpeakingPodcast && !isPausedPodcast ? 'Pause' : isPausedPodcast ? 'Resume' : 'Play Discussion'}
-                  </Button>
-                  {(isSpeakingPodcast || isPausedPodcast) && (
-                    <Button onClick={stopPodcastScript} variant="destructive" size="lg">
-                       <StopCircle className="mr-2 h-5 w-5" />
-                       Stop
+                    <Button onClick={playPodcastScript} variant="outline" size="lg">
+                        {isSpeakingPodcast && !isPausedPodcast ? <Pause className="mr-2 h-5 w-5" /> : <Play className="mr-2 h-5 w-5" />}
+                        {isSpeakingPodcast && !isPausedPodcast ? 'Pause' : isPausedPodcast ? 'Resume' : 'Play Discussion'}
                     </Button>
-                  )}
+                    {(isSpeakingPodcast || isPausedPodcast) && (
+                        <Button onClick={stopPodcastScript} variant="destructive" size="lg">
+                        <StopCircle className="mr-2 h-5 w-5" />
+                        Stop
+                        </Button>
+                    )}
                 </div>
                  <div className="max-h-60 overflow-y-auto p-3 my-4 border rounded-md bg-slate-50 dark:bg-slate-800">
                     <p className="text-sm whitespace-pre-wrap font-mono text-slate-700 dark:text-slate-300">{generatedPodcastScript}</p>
@@ -749,8 +747,8 @@ const NewsApp = () => {
                 {generatedPodcastScript ? 'Close' : 'Cancel'}
               </Button>
               {!generatedPodcastScript && (
-                <Button onClick={handleGeneratePodcastScript} disabled={isGeneratingPodcast}>
-                  {isGeneratingPodcast ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rss className="mr-2 h-4 w-4" />}
+                <Button onClick={handleGeneratePodcastScript} disabled={isGeneratingPodcastScript}>
+                  {isGeneratingPodcastScript ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rss className="mr-2 h-4 w-4" />}
                   Generate Script
                 </Button>
               )}
@@ -766,3 +764,5 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
+
+    

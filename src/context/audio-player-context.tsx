@@ -41,6 +41,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setIsPlaying(false);
     setProgress(0);
     setArticle(null);
+    setIsLoading(false);
   }, []);
 
   const togglePlayPause = useCallback(() => {
@@ -146,8 +147,15 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             toast({ variant: 'destructive', title: 'Playback Error', description: 'Could not play audio using browser TTS.' });
             stop();
         };
-
-        window.speechSynthesis.speak(utterance);
+        
+        // This is required on some browsers to ensure voices are loaded
+        if (voices.length === 0) {
+            window.speechSynthesis.onvoiceschanged = () => {
+                window.speechSynthesis.speak(utterance);
+            };
+        } else {
+             window.speechSynthesis.speak(utterance);
+        }
 
     } catch (error) {
       console.error('Playback failed:', error);
