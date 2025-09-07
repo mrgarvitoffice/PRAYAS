@@ -41,7 +41,7 @@ export function PrayasTerminal() {
   const [filteredArticles, setFilteredArticles] = useState<Article[]>(allArticles);
   const [region, setRegion] = useState('India');
   const [state, setState] = useState('All India');
-  const [city, setCity] = useState('');
+  const [city, setCity] = useState('All');
   const [category, setCategory] = useState('');
   const [language, setLanguage] = useState<Language>('en');
   const [podcastList, setPodcastList] = useState<Article[]>([]);
@@ -58,7 +58,7 @@ export function PrayasTerminal() {
       result = result.filter(a => a.country === 'India');
       if (state && state !== 'All India') {
         result = result.filter(a => a.state === state);
-        if (city) {
+        if (city && city !== 'All') {
           result = result.filter(a => a.city === city);
         }
       }
@@ -76,12 +76,12 @@ export function PrayasTerminal() {
   const handleRegionChange = (value: string) => {
     setRegion(value);
     setState(value === 'India' ? 'All India' : '');
-    setCity('');
+    setCity('All');
   };
 
   const handleStateChange = (value: string) => {
     setState(value);
-    setCity('');
+    setCity('All');
   };
 
   const addToPodcast = (article: Article) => {
@@ -137,7 +137,7 @@ export function PrayasTerminal() {
             <Select value={city} onValueChange={setCity} disabled={!cities.length}>
               <SelectTrigger><SelectValue placeholder="Select City" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Cities</SelectItem>
+                <SelectItem value="All">All Cities</SelectItem>
                 {cities.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
