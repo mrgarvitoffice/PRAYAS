@@ -85,8 +85,8 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
         speechConfig: {
           multiSpeakerVoiceConfig: {
             speakerVoiceConfigs: [
-              { speaker: 'Narrator', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Achernar' } } }, // Female
-              { speaker: 'Speaker1', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Algenib' } } }, // Male
+              { speaker: 'Speaker1', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Algenib' } } }, // Male Expert
+              { speaker: 'Speaker2', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Achernar' } } }, // Female Learner
             ],
           },
         },

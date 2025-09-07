@@ -47,11 +47,11 @@ You **MUST** write the entire dialogue script in that same language.
 - If 'hi', write in Hindi.
 - If 'bilingual', write a mix of English and Hindi for each segment, starting with an English intro.
 
-The dialogue should be between "Narrator" (a professional news anchor) and "Speaker1" (a knowledgeable correspondent). The Narrator provides introductions and transitions, while Speaker1 delivers the core news details.
+The dialogue should be between "Speaker1" (a knowledgeable and slightly formal expert) and "Speaker2" (an inquisitive and friendly learner). Speaker1 presents the key information from an article, and Speaker2 asks clarifying questions or makes comments to guide the conversation and make it more engaging.
 
-**CRITICAL FORMATTING RULE:** The output MUST be a script formatted *exactly* like this, with each line starting with "Narrator:" or "Speaker1:".
-Narrator: [Introductory line in specified language]
-Speaker1: [First news item in specified language]
+**CRITICAL FORMATTING RULE:** The output MUST be a script formatted *exactly* like this, with each line starting with "Speaker1:" or "Speaker2:".
+Speaker1: [First line of dialogue in specified language]
+Speaker2: [Second line of dialogue in specified language]
 ...and so on.
 
 Do NOT add any other text, introductions, or summaries. The entire output should be just the dialogue script.
@@ -105,7 +105,7 @@ const generatePodcastScriptFlow = ai.defineFlow({
   // Self-healing: Clean up the script to ensure it only contains valid dialogue lines.
   dialogueScript = dialogueScript
     .split('\n')
-    .filter(line => line.startsWith('Narrator:') || line.startsWith('Speaker1:'))
+    .filter(line => line.startsWith('Speaker1:') || line.startsWith('Speaker2:'))
     .join('\n');
 
   if (!dialogueScript) {
