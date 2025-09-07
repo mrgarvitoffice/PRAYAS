@@ -92,6 +92,8 @@ const NewsApp = () => {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const utteranceRef = React.useRef<SpeechSynthesisUtterance | null>(null);
 
+  const [processingArticleIds, setProcessingArticleIds] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     const handleVoicesChanged = () => {
       const availableVoices = window.speechSynthesis.getVoices();
@@ -144,6 +146,38 @@ const NewsApp = () => {
     }
   }, []);
 
+  const processArticleForDisplay = useCallback(async (article: Article) => {
+    if (article.titleHi) return; // Already processed
+
+    setProcessingArticleIds(prev => new Set(prev).add(article.id));
+    try {
+      const hindiSummary = await translateAndSummarizeArticleHindi({
+        articleTitle: article.title,
+        articleContent: article.rawContent,
+      });
+      const processedArticle = {
+        ...article,
+        titleHi: hindiSummary.translatedTitle,
+        summaryHi: hindiSummary.summaryPoints.join(' '),
+        importantPointsHi: hindiSummary.summaryPoints,
+      };
+      handleArticleUpdate(processedArticle);
+    } catch (e) {
+      console.error(`Failed to process article ${article.id} for display`, e);
+      toast({
+        variant: "destructive",
+        title: "Translation Failed",
+        description: `Could not translate "${article.title.slice(0, 30)}..."`,
+      });
+    } finally {
+       setProcessingArticleIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(article.id);
+        return newSet;
+       });
+    }
+  }, [handleArticleUpdate, toast]);
+
   const handleFilterChange = useCallback((filterType: string, value: string) => {
     setFilters(prev => {
       const newFilters = { ...prev, [filterType]: value };
@@ -163,6 +197,16 @@ const NewsApp = () => {
     }, 500); 
     return () => clearTimeout(handler);
   }, [filters.search, filters.region, filters.state, filters.city, filters.category, fetchNewsCallback]);
+
+  useEffect(() => {
+    if (filters.language === 'hi') {
+      news.forEach(article => {
+        if (!article.titleHi && !processingArticleIds.has(article.id)) {
+           processArticleForDisplay(article);
+        }
+      });
+    }
+  }, [filters.language, news, processingArticleIds, processArticleForDisplay]);
 
 
   const clearFilters = () => {
@@ -473,10 +517,12 @@ const NewsApp = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
               {news.map((article) => {
                 const isCurrentlyPlaying = audioPlayer.currentArticle?.id === article.id && audioPlayer.isPlaying;
-                const isCurrentlyLoading = audioPlayer.currentArticle?.id === article.id && audioPlayer.isLoading;
+                const isCurrentlyLoadingAudio = audioPlayer.currentArticle?.id === article.id && audioPlayer.isLoading;
+                const isCurrentlyProcessingText = processingArticleIds.has(article.id);
                 
                 const title = filters.language === 'hi' && article.titleHi ? article.titleHi : article.title;
                 const summary = filters.language === 'hi' && article.summaryHi ? article.summaryHi : article.summary;
+                const isLoading = isCurrentlyLoadingAudio || isCurrentlyProcessingText;
 
                 const needsProcessing = (filters.language === 'en' && article.importantPoints.length === 0) || (filters.language === 'hi' && !article.titleHi);
 
@@ -520,13 +566,13 @@ const NewsApp = () => {
                        
                       </div>
                       <p className="text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-4 flex-1">
-                        {summary}
+                        {isLoading && filters.language === 'hi' ? 'Translating...' : summary}
                       </p>
                     </div>
                     <div className="bg-slate-50 dark:bg-slate-800 p-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700/50">
                       <div className="flex items-center gap-2">
-                         <button onClick={() => audioPlayer.playArticle(article, filters.language)} disabled={isCurrentlyLoading || isSpeakingHeadlines} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Listen to Article">
-                            {isCurrentlyLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Headphones className="w-5 h-5"/>}
+                         <button onClick={() => audioPlayer.playArticle(article, filters.language)} disabled={isLoading || isSpeakingHeadlines} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Listen to Article">
+                            {isLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Headphones className="w-5 h-5"/>}
                          </button>
                          {needsProcessing && !article.audioDataUri && (
                            <Tooltip>
@@ -641,3 +687,5 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
+
+    
