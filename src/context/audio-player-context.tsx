@@ -55,15 +55,16 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const processAndCacheArticle = useCallback(async (articleToProcess: Article, language: Language): Promise<Article> => {
     let updatedArticle = { ...articleToProcess };
-    const needsProcessing = (language === 'en' && !articleToProcess.importantPoints?.length) || (language === 'hi' && !articleToProcess.titleHi);
+    const needsSummarization = (language === 'en' && !articleToProcess.importantPoints?.length) || (language === 'hi' && !articleToProcess.titleHi);
 
-    if (needsProcessing) {
+    if (needsSummarization) {
       toast({
         title: "Generating Smart Summary...",
         description: `Processing "${articleToProcess.title}"`,
       });
       
       try {
+        // Always generate both summaries to have them ready
         const [englishSummary, hindiSummary] = await Promise.all([
             summarizeArticle({ title: articleToProcess.title, full_text: articleToProcess.rawContent }),
             translateAndSummarizeArticleHindi({ articleTitle: articleToProcess.title, articleContent: articleToProcess.rawContent })
@@ -81,7 +82,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       } catch (e) {
           console.error("Error during summarization:", e);
           toast({ variant: 'destructive', title: 'Summarization Failed', description: e instanceof Error ? e.message : 'Could not process article.' });
-          throw e;
+          throw e; // Re-throw to stop the process
       }
     }
     
@@ -94,6 +95,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
     
     try {
+        toast({ title: "Generating AI discussion...", description: "This might take a moment." });
         const result = await generateDiscussionAudio({ content: contentToRead, language });
         if (language === 'en') {
           updatedArticle.audioDataUriEn = result.audioDataUri;
@@ -107,7 +109,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
           errorMessage = 'The daily limit for audio generation has been reached. Please try again tomorrow.';
         }
         toast({ variant: 'destructive', title: 'Audio Generation Failed', description: errorMessage });
-        throw e;
+        throw e; // Re-throw
     }
 
     if (onArticleUpdateRef.current) {
@@ -130,7 +132,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setArticle(articleToPlay);
 
     try {
-        let articleWithAudio = articleToPlay;
+        let articleWithAudio = { ...articleToPlay };
         const audioUri = language === 'en' ? articleToPlay.audioDataUriEn : articleToPlay.audioDataUriHi;
         
         if (!audioUri) {
