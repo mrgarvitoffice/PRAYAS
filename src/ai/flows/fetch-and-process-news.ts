@@ -106,7 +106,7 @@ const fetchAndProcessNewsFlow = ai.defineFlow(
   },
   async ({ query }) => {
     const newsResponse = await fetchNews(query);
-    const articles = newsResponse.results.slice(0, 5); // Limit to 5 articles for now
+    const articles = newsResponse.results.slice(0, 11); // Limit to 11 articles
 
     const processingPromises = articles.map(processArticle);
     const processedArticles = await Promise.all(processingPromises);
