@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -61,13 +62,25 @@ function transformArticle(article: NewsDataArticle): Article {
   });
   
   const rawContent = article.content || article.description || '';
+  
+  let summary = (article.description || rawContent) || 'No description available.';
+  if (summary.length > 200) {
+    const truncated = summary.slice(0, 200);
+    const lastPeriod = truncated.lastIndexOf('.');
+    if (lastPeriod > 0) {
+      summary = truncated.substring(0, lastPeriod + 1);
+    } else {
+      summary = truncated + '...';
+    }
+  }
+
 
   return {
     id: article.article_id,
     title: article.title,
     // Placeholder fields, will be filled in on-demand by the client
     titleHi: '',
-    summary: (article.description || rawContent).slice(0, 200) || 'No description available.',
+    summary: summary,
     summaryHi: '',
     importantPoints: [],
     importantPointsHi: [],
