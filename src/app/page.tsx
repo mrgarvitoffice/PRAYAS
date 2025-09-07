@@ -521,7 +521,7 @@ const NewsApp = () => {
                   const isCurrentlyProcessingText = processingArticleIds.has(article.id);
                   
                   const title = filters.language === 'hi' && article.titleHi ? article.titleHi : article.title;
-                  const summary = filters.language === 'hi' && article.summaryHi ? article.summaryHi : a.summary;
+                  const summary = filters.language === 'hi' && article.summaryHi ? article.summaryHi : article.summary;
                   const importantPoints = filters.language === 'hi' && article.importantPointsHi.length > 0 ? article.importantPointsHi : article.importantPoints;
                   const isLoading = isCurrentlyLoadingAudio || isCurrentlyProcessingText;
 
