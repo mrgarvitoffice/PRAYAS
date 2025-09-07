@@ -18,7 +18,6 @@ import type { Article } from '@/lib/types';
 
 const GeneratePodcastFromArticlesInputSchema = z.object({
   articles: z.array(z.any()).describe('An array of article objects to include in the podcast.'),
-  language: z.enum(['en', 'hi', 'bilingual']).describe('The language for podcast generation.'),
 });
 export type GeneratePodcastFromArticlesInput = z.infer<typeof GeneratePodcastFromArticlesInputSchema>;
 
@@ -68,11 +67,11 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
   name: 'generatePodcastFromArticlesFlow',
   inputSchema: GeneratePodcastFromArticlesInputSchema,
   outputSchema: GeneratePodcastFromArticlesOutputSchema,
-}, async ({ articles, language }) => {
+}, async ({ articles }) => {
   
   // Step 1: Generate the podcast script using the dedicated, robust flow.
   console.log('[AI Flow - Podcast] Generating dialogue script...');
-  const { script } = await generatePodcastScript({ articles, language });
+  const { script } = await generatePodcastScript({ articles });
   
   // This is a critical validation step. If the script is empty, we must stop.
   if (!script) {

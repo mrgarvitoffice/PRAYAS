@@ -15,7 +15,6 @@ import type { Article } from '@/lib/types';
 
 const GeneratePodcastScriptInputSchema = z.object({
   articles: z.array(z.any()).describe('An array of article objects to include in the podcast script.'),
-  language: z.enum(['en', 'hi', 'bilingual']).describe('The language for the podcast script.'),
 });
 export type GeneratePodcastScriptInput = z.infer<typeof GeneratePodcastScriptInputSchema>;
 
@@ -37,22 +36,19 @@ export async function generatePodcastScript(input: GeneratePodcastScriptInput): 
 const dialoguePrompt = ai.definePrompt({
     name: 'generatePodcastScriptPrompt',
     model: 'googleai/gemini-2.5-flash-lite',
-    input: { schema: z.object({ articleSnippets: z.string(), language: z.string() }) },
+    input: { schema: z.object({ articleSnippets: z.string() }) },
     output: { format: 'text' }, // Request raw text for easier cleanup.
-    prompt: `You are an expert multilingual podcast scriptwriter. Your task is to convert the following news articles into a natural-sounding, two-person dialogue script.
+    prompt: `You are an expert multilingual podcast scriptwriter. Your primary task is to convert the following news articles into a natural-sounding, two-person dialogue script.
 
-**CRUCIAL INSTRUCTION: LANGUAGE ADHERENCE**
-The user has specified the desired language as: **{{{language}}}**.
-You **MUST** write the entire dialogue script in that same language.
-- If 'en', write in English.
-- If 'hi', write in Hindi.
-- If 'bilingual', create a natural mix of English and Hindi for each segment, starting with an English intro.
+**CRUCIAL INSTRUCTION: LANGUAGE DETECTION & ADHERENCE**
+First, meticulously analyze the provided "News Articles to Convert" to determine its primary language (e.g., English, Hindi, etc.).
+You **MUST** write the entire dialogue script in that same detected language. This is a non-negotiable rule.
 
 The dialogue should be between "Speaker1" (a knowledgeable and slightly formal expert) and "Speaker2" (an inquisitive and friendly learner). Speaker1 presents the key information from an article, and Speaker2 asks clarifying questions or makes comments to guide the conversation and make it more engaging.
 
 **CRITICAL FORMATTING RULE:** The output MUST be a script formatted *exactly* like this, with each line starting with "Speaker1:" or "Speaker2:".
-Speaker1: [First line of dialogue in specified language]
-Speaker2: [Second line of dialogue in specified language]
+Speaker1: [First line of dialogue in detected language]
+Speaker2: [Second line of dialogue in detected language]
 ...and so on.
 
 Do NOT add any other text, introductions, summaries, or explanations. The entire output must be ONLY the dialogue script.
@@ -62,31 +58,25 @@ News Articles to Convert:
 {{{articleSnippets}}}
 ---
 
-Please provide the dialogue script below in the specified language.`
+Please provide the dialogue script below in the detected language.`
 });
 
 const generatePodcastScriptFlow = ai.defineFlow({
   name: 'generatePodcastScriptFlow',
   inputSchema: GeneratePodcastScriptInputSchema,
   outputSchema: GeneratePodcastScriptOutputSchema,
-}, async ({ articles, language }) => {
+}, async ({ articles }) => {
 
   const getArticleContent = (article: Article) => {
-    // Use important points if available, otherwise fallback to the summary.
-    const englishSummaryContent = (article.importantPoints && article.importantPoints.length > 0)
-        ? article.importantPoints.join('. ')
-        : article.summary;
-    const hindiSummaryContent = (article.importantPointsHi && article.importantPointsHi.length > 0)
+    // Use the content from the language that is most likely available.
+    const title = article.titleHi || article.title;
+    const summary = (article.importantPointsHi && article.importantPointsHi.length > 0)
         ? article.importantPointsHi.join('. ')
-        : article.summaryHi;
+        : (article.importantPoints && article.importantPoints.length > 0)
+        ? article.importantPoints.join('. ')
+        : (article.summaryHi || article.summary)
 
-    const englishContent = `Title: ${article.title}. Summary: ${englishSummaryContent}`;
-    const hindiContent = `Title: ${article.titleHi}. Summary: ${hindiSummaryContent}`;
-    
-    if (language === 'en') return englishContent;
-    if (language === 'hi') return hindiContent;
-    // Bilingual
-    return `English Version: ${englishContent}. Now in Hindi: ${hindiContent}`;
+    return `Title: ${title}. Summary: ${summary}`;
   };
 
   const articleSnippets = articles.map(article => {
@@ -99,7 +89,7 @@ const generatePodcastScriptFlow = ai.defineFlow({
     throw new Error("Cannot generate script from empty or invalid article content.");
   }
 
-  const { text } = await dialoguePrompt({ articleSnippets, language });
+  const { text } = await dialoguePrompt({ articleSnippets });
   
   if (!text) {
      throw new Error("The AI model returned no text. The operation cannot proceed.");

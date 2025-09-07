@@ -85,7 +85,6 @@ const NewsApp = () => {
   const audioPlayer = useAudioPlayer();
 
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
-  const [podcastLanguage, setPodcastLanguage] = useState<'en' | 'hi' | 'bilingual'>('en');
   const [isGeneratingPodcast, setIsGeneratingPodcast] = useState(false);
   const [generatedPodcastAudio, setGeneratedPodcastAudio] = useState<string | null>(null);
 
@@ -262,54 +261,10 @@ const NewsApp = () => {
     try {
       toast({ title: 'Generating your podcast...', description: 'This may take a minute or two. Preparing articles...' });
       
-      const articlesForPodcast = await Promise.all(
-        news.slice(0, 10).map(async (article) => {
-          if ((podcastLanguage === 'hi' || podcastLanguage === 'bilingual') && !article.titleHi) {
-             console.log(`Translating article for podcast: ${article.id}`);
-             setProcessingArticleIds(prev => new Set(prev).add(article.id));
-             try {
-                const hindiSummary = await translateAndSummarizeArticleHindi({
-                    articleTitle: article.title,
-                    articleContent: article.rawContent,
-                  });
-                  const processedArticle = {
-                    ...article,
-                    titleHi: hindiSummary.translatedTitle,
-                    summaryHi: hindiSummary.summaryPoints.join(' '),
-                    importantPointsHi: hindiSummary.summaryPoints,
-                  };
-                  handleArticleUpdate(processedArticle);
-                  return processedArticle;
-             } catch (e) {
-                console.error(`Podcast pre-translation failed for ${article.id}`, e);
-                // Return original article if translation fails, so we don't block the whole process
-                return article;
-             } finally {
-                setProcessingArticleIds(prev => {
-                    const newSet = new Set(prev);
-                    newSet.delete(article.id);
-                    return newSet;
-                });
-             }
-          }
-          return article;
-        })
-      );
-
-      // Final check to ensure all necessary content is ready
-      const allContentReady = articlesForPodcast.every(a => {
-        if (podcastLanguage === 'en') return !!a.title && (a.summary || a.importantPoints?.length > 0);
-        if (podcastLanguage === 'hi') return !!a.titleHi && (a.summaryHi || a.importantPointsHi?.length > 0);
-        // For bilingual, check both are ready
-        return !!a.title && (a.summary || a.importantPoints?.length > 0) && !!a.titleHi && (a.summaryHi || a.importantPointsHi?.length > 0);
-      });
-
-      if (!allContentReady) {
-        throw new Error("Could not prepare all articles for the podcast. Some content or translations may be missing.");
-      }
+      const articlesForPodcast = news.slice(0, 10);
       
       toast({ title: 'Generating podcast script...', description: 'Your articles are ready, now creating the script.' });
-      const result = await generatePodcastFromArticles({ articles: articlesForPodcast, language: podcastLanguage });
+      const result = await generatePodcastFromArticles({ articles: articlesForPodcast });
       setGeneratedPodcastAudio(result.audioDataUri);
       toast({ title: 'Podcast generated successfully!', description: 'You can now play or download it.' });
     } catch (e) {
@@ -677,7 +632,7 @@ const NewsApp = () => {
               <DialogDescription>
                 {generatedPodcastAudio
                   ? 'Your podcast is ready! You can now play it below or download it.'
-                  : `A podcast will be generated from the top ${Math.min(10, news.length)} available articles. Choose a language for the audio.`}
+                  : `A podcast will be generated from the top ${Math.min(10, news.length)} available articles.`}
               </DialogDescription>
             </DialogHeader>
 
@@ -710,23 +665,11 @@ const NewsApp = () => {
                     {news.slice(0, 10).map((article, index) => (
                       <li key={article.id} className="flex items-center justify-between p-2 rounded-md bg-muted">
                         <span className="truncate pr-4 text-sm">
-                          {index + 1}. {filters.language === 'hi' && article.titleHi ? article.titleHi : article.title}
+                          {index + 1}. {article.title}
                         </span>
                       </li>
                     ))}
                   </ul>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Podcast Language</label>
-                  <select
-                    value={podcastLanguage}
-                    onChange={(e) => setPodcastLanguage(e.target.value as any)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md"
-                  >
-                    <option value="en">English</option>
-                    <option value="hi">Hindi</option>
-                    <option value="bilingual">Bilingual (English+Hindi)</option>
-                  </select>
                 </div>
               </>
             )}
