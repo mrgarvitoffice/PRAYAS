@@ -55,9 +55,10 @@ const generateTtsAudioFlow = ai.defineFlow({
 }, async ({ script, language }) => {
     console.log(`[AI Flow - TTS Audio] Generating audio for script in ${language}...`);
 
+    // OpenAI voices are generally higher quality and have better language support.
     const langVoices = {
       en: { speaker1: 'Alloy', speaker2: 'Echo' },
-      hi: { speaker1: 'Algenib', speaker2: 'Achernar' }
+      hi: { speaker1: 'Alloy', speaker2: 'Echo' } // Using same voices for Hindi as an example
     };
     const voices = langVoices[language];
 
