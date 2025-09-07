@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -22,7 +23,6 @@ import { cn } from '@/lib/utils';
 import type { Article, Language } from '@/lib/types';
 import { fetchAndProcessNews } from '@/ai/flows/fetch-and-process-news';
 import { generateTTSAudioClip } from '@/ai/flows/generate-tts-audio-clip';
-import { AudioPlayerProvider, useAudioPlayer } from '@/context/audio-player-context';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
 import {
@@ -89,6 +89,7 @@ const NewsApp = () => {
         }
       };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isListeningAll]);
   
   const playNextInPlaylist = useCallback(async () => {
@@ -98,7 +99,7 @@ const NewsApp = () => {
       const article = playlistRef.current[nextIndex];
       const lang = filters.language;
       const title = lang === 'hi' && article.titleHi ? article.titleHi : article.title;
-      const points = lang === 'hi' && article.importantPointsHi ? article.importantPointsHi : article.importantPoints;
+      const points = lang === 'hi' && article.importantPointsHi.length ? article.importantPointsHi : article.importantPoints;
   
       try {
         const result = await generateTTSAudioClip({
@@ -126,60 +127,63 @@ const NewsApp = () => {
   }, [currentSpokenIndex, filters.language, toast]);
 
 
-  const processAndSetNews = useCallback(async (articles: Article[]) => {
-    if (filters.language === 'hi') {
+  const processAndSetNews = useCallback(async (articles: Article[], language: Language) => {
+    if (language === 'hi') {
       toast({ title: 'Translating articles to Hindi...', description: 'Please wait.' });
       const translatedArticles = await Promise.all(
         articles.map(async (article) => {
-          if (!article.titleHi) { // Only translate if not already translated
-            try {
-              const hindiSummary = await translateAndSummarizeArticleHindi({
-                articleTitle: article.title,
-                articleContent: article.rawContent,
-              });
-              return {
-                ...article,
-                titleHi: hindiSummary.translatedTitle,
-                summaryHi: hindiSummary.summaryPoints.join(' '),
-                importantPointsHi: hindiSummary.summaryPoints,
-              };
-            } catch (e) {
-              console.error(`Failed to translate article ${article.id}`, e);
-              return article; // Return original article on error
-            }
+          // Always re-translate if language is Hindi to ensure consistency
+          try {
+            const hindiSummary = await translateAndSummarizeArticleHindi({
+              articleTitle: article.title,
+              articleContent: article.rawContent,
+            });
+            return {
+              ...article,
+              titleHi: hindiSummary.translatedTitle,
+              summaryHi: hindiSummary.summaryPoints.join(' '),
+              importantPointsHi: hindiSummary.summaryPoints,
+            };
+          } catch (e) {
+            console.error(`Failed to translate article ${article.id}`, e);
+            toast({
+              variant: 'destructive',
+              title: `Translation Failed`,
+              description: `Could not translate "${article.title}".`
+            })
+            return { ...article, titleHi: article.title, summaryHi: article.summary, importantPointsHi: [] }; // Return original on error
           }
-          return article;
         })
       );
       setNews(translatedArticles);
     } else {
       setNews(articles);
     }
-  }, [filters.language, toast]);
+  }, [toast]);
 
-  const fetchNewsCallback = useCallback(async () => {
+  const fetchNewsCallback = useCallback(async (currentFilters: typeof filters) => {
     setLoading(true);
     setError('');
     try {
-      const countryCode = filters.region === 'world' ? 'us' : 'in';
+      const countryCode = currentFilters.region === 'world' ? 'us' : 'in';
       let fetchedArticles = await fetchAndProcessNews({
-        category: filters.category || 'all',
+        category: currentFilters.category || 'top',
         country: countryCode,
-        state: filters.state || 'All',
-        city: filters.city || 'All',
+        state: currentFilters.state || undefined,
+        city: currentFilters.city || undefined,
       });
       
       let processedArticles = fetchedArticles.filter(a => a.title && (a.rawContent || a.summary));
       
-      if (filters.search.trim()) {
-          const searchTerm = filters.search.trim().toLowerCase();
+      if (currentFilters.search.trim()) {
+          const searchTerm = currentFilters.search.trim().toLowerCase();
           processedArticles = processedArticles.filter(article => 
               article.title.toLowerCase().includes(searchTerm) ||
               (article.summary && article.summary.toLowerCase().includes(searchTerm))
           );
       }
       
-      await processAndSetNews(processedArticles);
+      await processAndSetNews(processedArticles, currentFilters.language);
 
       if (processedArticles.length === 0) {
         setError('No news articles found for the selected filters.');
@@ -193,7 +197,7 @@ const NewsApp = () => {
     } finally {
       setLoading(false);
     }
-  }, [filters.region, filters.state, filters.city, filters.category, filters.search, processAndSetNews]);
+  }, [processAndSetNews]);
 
   const handleFilterChange = (filterType: string, value: string) => {
     setFilters(prev => {
@@ -226,11 +230,11 @@ const NewsApp = () => {
 
   useEffect(() => {
     const handler = setTimeout(() => {
-      fetchNewsCallback();
+      fetchNewsCallback(filters);
     }, 500); // Debounce API calls
 
     return () => clearTimeout(handler);
-  }, [fetchNewsCallback]);
+  }, [filters, fetchNewsCallback]);
   
   const addToPodcast = (article: Article) => {
     if (!podcastList.find(p => p.id === article.id)) {
@@ -286,11 +290,11 @@ const NewsApp = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={toggleListenAll}>
+            <Button variant="outline" onClick={toggleListenAll} disabled={loading || news.length === 0}>
               {isListeningAll ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
               {isListeningAll ? 'Stop Listening' : 'Listen to All'}
             </Button>
-            <Button variant="outline" onClick={handleCreatePodcast}>
+            <Button variant="outline" onClick={handleCreatePodcast} disabled={loading || news.length === 0}>
               <Podcast className="mr-2 h-4 w-4" />
               Create Podcast
             </Button>
@@ -310,8 +314,8 @@ const NewsApp = () => {
               Clear
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div className="lg:col-span-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            <div className="lg:col-span-2 xl:col-span-1">
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 <Search className="w-4 h-4 inline mr-1" />
                 Search
@@ -531,9 +535,8 @@ const NewsApp = () => {
 
 
 export default function Home() {
-  return (
-    <AudioPlayerProvider>
-      <NewsApp />
-    </AudioPlayerProvider>
-  );
+  // The page is now a simple wrapper around NewsApp
+  return <NewsApp />;
 }
+
+    
