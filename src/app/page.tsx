@@ -802,8 +802,9 @@ const NewsApp = () => {
                            <StopCircle className="h-5 w-5" />
                         </Button>
                     )}
-                     <Button onClick={handleGeneratePodcastAudio} variant="outline" size="icon" disabled={isGeneratingHqAudio || !generatedPodcastScript}>
-                        {isGeneratingHqAudio ? <Loader2 className="h-5 w-5 animate-spin" /> :  <Headphones className="h-5 w-5" />}
+                     <Button onClick={handleGeneratePodcastAudio} variant="outline" size="lg" disabled={isGeneratingHqAudio || !generatedPodcastScript}>
+                        {isGeneratingHqAudio ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> :  <Headphones className="mr-2 h-4 w-4" />}
+                         {isGeneratingHqAudio ? 'Generating...' : 'HQ Audio'}
                     </Button>
                 </div>
                  { hqAudioError && <p className="text-sm text-red-500 text-center">{hqAudioError}</p> }
