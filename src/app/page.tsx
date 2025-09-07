@@ -295,17 +295,21 @@ const NewsApp = () => {
       return;
     }
 
-    const headlines = news
-      .map(a => filters.language === 'hi' && a.titleHi ? a.titleHi : a.title)
+    const textToSpeak = news
+      .map(a => {
+        const title = filters.language === 'hi' && a.titleHi ? a.titleHi : a.title;
+        const summary = filters.language === 'hi' && a.summaryHi ? a.summaryHi : a.summary;
+        return `${title}. ${summary}`;
+      })
       .filter(Boolean)
       .join('. ');
       
-    if (!headlines) {
-      toast({ title: 'No headlines to read', description: 'There are no articles with headlines to read out.' });
+    if (!textToSpeak) {
+      toast({ title: 'No content to read', description: 'There are no articles with headlines or summaries to read out.' });
       return;
     }
     
-    const utterance = new SpeechSynthesisUtterance(headlines);
+    const utterance = new SpeechSynthesisUtterance(textToSpeak);
     utteranceRef.current = utterance;
 
     const langCode = filters.language === 'hi' ? 'hi-IN' : 'en-US';
