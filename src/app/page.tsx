@@ -71,8 +71,8 @@ const NewsApp = () => {
     if (filters.region === 'india') {
       url += '&country=in';
     } else if (filters.region === 'world') {
-      // For world news, exclude India to avoid duplicates
-      url += '&country=us,gb,ca,au,fr,de,jp,cn,br,mx';
+      // For world news, limit to 5 countries to stay within API limits
+      url += '&country=us,gb,ca,au,de';
     }
     
     let queryParts = [];
