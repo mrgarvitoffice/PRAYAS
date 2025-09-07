@@ -100,6 +100,12 @@ const nextConfig: NextConfig = {
         hostname: 'i.guim.co.uk',
         port: '',
         pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'thenewsmill.com',
+        port: '',
+        pathname: '/**',
       }
     ],
   },
