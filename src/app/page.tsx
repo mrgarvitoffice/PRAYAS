@@ -86,6 +86,7 @@ const NewsApp = () => {
   const audioPlayer = useAudioPlayer();
 
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
+  const [podcastCandidateArticles, setPodcastCandidateArticles] = useState<Article[]>([]);
   const [isGeneratingPodcastScript, setIsGeneratingPodcastScript] = useState(false);
   const [generatedPodcastScript, setGeneratedPodcastScript] = useState<string | null>(null);
   
@@ -252,6 +253,7 @@ const NewsApp = () => {
   
   const handleCreatePodcast = () => {
     if (news.length > 0) {
+      setPodcastCandidateArticles(news.slice(0, 10));
       setGeneratedPodcastScript(null);
       setHqAudioDataUri(null);
       setHqAudioError(null);
@@ -265,8 +267,16 @@ const NewsApp = () => {
     }
   };
 
+  const removePodcastCandidate = (articleId: string) => {
+    setPodcastCandidateArticles(prev => prev.filter(a => a.id !== articleId));
+  };
+
+
   const handleGeneratePodcastScript = async () => {
-    if (news.length === 0) return;
+    if (podcastCandidateArticles.length === 0) {
+      toast({ variant: 'destructive', title: 'No Articles Selected', description: 'Please select at least one article.' });
+      return;
+    }
     setIsGeneratingPodcastScript(true);
     setGeneratedPodcastScript(null);
     setHqAudioDataUri(null);
@@ -274,7 +284,7 @@ const NewsApp = () => {
     try {
       toast({ title: 'Generating your discussion script...', description: 'Preparing articles and writing dialogue...' });
       
-      const articlesForPodcast = news.slice(0, 10).map(a => ({ title: a.title, content: a.rawContent }));
+      const articlesForPodcast = podcastCandidateArticles.map(a => ({ title: a.title, content: a.rawContent }));
       
       const result = await generateDiscussionAudio({ articles: articlesForPodcast, language: filters.language });
       setGeneratedPodcastScript(result.discussionScript);
@@ -732,7 +742,7 @@ const NewsApp = () => {
               <DialogDescription>
                 {generatedPodcastScript
                   ? 'Your discussion script is ready! Play it directly or generate a high-quality audio version to download.'
-                  : `A discussion script will be generated from the top ${Math.min(10, news.length)} available articles.`}
+                  : `Select the articles you want to include in your discussion.`}
               </DialogDescription>
             </DialogHeader>
 
@@ -773,11 +783,14 @@ const NewsApp = () => {
               <>
                 <div className="max-h-60 overflow-y-auto p-1 my-4 border rounded-md">
                   <ul className="space-y-2">
-                    {news.slice(0, 10).map((article, index) => (
-                      <li key={article.id} className="flex items-center justify-between p-2 rounded-md bg-muted">
+                    {podcastCandidateArticles.map((article, index) => (
+                      <li key={article.id} className="flex items-center justify-between p-2 rounded-md bg-muted/50 dark:bg-muted/20">
                         <span className="truncate pr-4 text-sm">
                           {index + 1}. {filters.language === 'hi' && article.titleHi ? article.titleHi : article.title}
                         </span>
+                         <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-red-500" onClick={() => removePodcastCandidate(article.id)}>
+                            <Trash2 className="h-4 w-4" />
+                         </Button>
                       </li>
                     ))}
                   </ul>
@@ -790,9 +803,9 @@ const NewsApp = () => {
                 {generatedPodcastScript ? 'Close' : 'Cancel'}
               </Button>
               {!generatedPodcastScript && (
-                <Button onClick={handleGeneratePodcastScript} disabled={isGeneratingPodcastScript}>
+                <Button onClick={handleGeneratePodcastScript} disabled={isGeneratingPodcastScript || podcastCandidateArticles.length === 0}>
                   {isGeneratingPodcastScript ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rss className="mr-2 h-4 w-4" />}
-                  Generate Script
+                  Generate Script ({podcastCandidateArticles.length})
                 </Button>
               )}
             </DialogFooter>
@@ -807,3 +820,5 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
+
+    
