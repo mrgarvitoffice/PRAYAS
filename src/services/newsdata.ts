@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -35,19 +36,21 @@ export async function fetchNews(
   // Build a query string for location if state/city are provided
   const locationQuery = [
     city && city.toLowerCase() !== 'all' ? city : '',
-    state && state.toLowerCase() !== 'all india' && state.toLowerCase() !== 'all' ? state : ''
-  ].filter(Boolean).join(', ');
+    state && state.toLowerCase() !== 'all' ? state : ''
+  ].filter(Boolean).join(' ');
 
-  // NewsData.io requires `q` OR `category` when `country` is specified.
-  if (category && category.toLowerCase() !== 'all') {
-    // If a category is selected, use it. Append location to q if it exists.
+  // newsdata.io free plan does not allow `category` and `q` together with country.
+  // We must choose one or the other.
+  if (locationQuery) {
+    // If there is a location, we must use the `q` param.
+    // The category is ignored in this case.
+    params.set('q', locationQuery);
+  } else if (category && category.toLowerCase() !== 'all') {
+    // If no location, but a specific category, use the `category` param.
     params.set('category', category.toLowerCase());
-    if (locationQuery) {
-        params.set('q', locationQuery);
-    }
   } else {
-    // If 'All' categories, use location query or a general 'news' query.
-    params.set('q', locationQuery || 'news');
+    // If no location and "All" categories, use a general query.
+    params.set('q', 'top'); 
   }
 
   const url = `${API_BASE_URL}?${params.toString()}`;

@@ -68,14 +68,19 @@ export function PrayasTerminal() {
     setIsLoading(true);
     try {
       const countryCode = region === 'World' ? 'us' : 'in';
-      const fetchedArticles = await fetchAndProcessNews({ category, country: countryCode, state, city });
+      const fetchedArticles = await fetchAndProcessNews({ 
+        category, 
+        country: countryCode, 
+        state: state === 'All India' ? 'All' : state,
+        city,
+      });
       setArticles(fetchedArticles);
     } catch (error) {
       console.error('Failed to fetch news:', error);
       toast({
         variant: 'destructive',
         title: 'Failed to load news',
-        description: 'Could not fetch the latest articles. Please try again later.',
+        description: error instanceof Error ? error.message : 'Could not fetch the latest articles. Please try again later.',
       });
        setArticles([]);
     } finally {
