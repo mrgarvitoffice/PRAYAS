@@ -94,6 +94,12 @@ const nextConfig: NextConfig = {
         hostname: 'platform.mmafighting.com',
         port: '',
         pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'i.guim.co.uk',
+        port: '',
+        pathname: '/**',
       }
     ],
   },
