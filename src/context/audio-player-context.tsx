@@ -217,7 +217,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       if (isPlaying) {
         audioRef.current.pause();
       } else {
-        audio_ref.current.play();
+        audioRef.current.play();
       }
     }
   }, [isPlaying]);
