@@ -30,15 +30,16 @@ export type GeneratePodcastFromArticlesOutput = z.infer<typeof GeneratePodcastFr
 export async function generatePodcastFromArticles(input: GeneratePodcastFromArticlesInput): Promise<GeneratePodcastFromArticlesOutput> {
  try {
     // First, run the summarization flow
-    const summarizedArticles = await summarizeArticlesForPodcast({ articles: input.articles });
+    const { articles } = await summarizeArticlesForPodcast({ articles: input.articles });
     // Then, pass the summarized articles to the script and audio generation flow
-    return await generatePodcastFromArticlesFlow(summarizedArticles);
+    return await generatePodcastScriptAndAudioFlow({ articles });
  } catch (error: any) {
     console.error("[AI ACTION Error - Podcast] Top-level flow failed:", error);
     let errorMessage = error.message || 'An unknown error occurred during podcast generation.';
      if (errorMessage.includes('429')) {
       errorMessage = 'You have exceeded the daily limit for podcast generation. Please try again tomorrow.';
     }
+    // Pass a clear, user-friendly error message.
     throw new Error(errorMessage);
   }
 }
@@ -94,7 +95,7 @@ Please provide the dialogue script below in the detected language.`
 });
 
 // This flow now expects articles that have already been summarized.
-const generatePodcastFromArticlesFlow = ai.defineFlow({
+const generatePodcastScriptAndAudioFlow = ai.defineFlow({
   name: 'generatePodcastScriptAndAudioFlow', // Renamed for clarity
   inputSchema: z.object({ articles: z.array(z.any()) }),
   outputSchema: GeneratePodcastFromArticlesOutputSchema,
