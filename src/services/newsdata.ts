@@ -32,14 +32,16 @@ export async function fetchNews(
 
   // Set country, default to 'in' if not provided
   params.country = country.toLowerCase() || 'in';
-  
+
   // Newsdata.io requires either `q` or `category` when `country` is specified, but not both.
+  // This logic ensures we only send one or the other.
   if (category && category.toLowerCase() !== 'all') {
     params.category = category.toLowerCase();
   } else {
     // Use a general query if no specific category is selected
-    params.q = 'top'; 
+    params.q = 'top';
   }
+
 
   const url = `${API_BASE_URL}?${new URLSearchParams(params).toString()}`;
 
