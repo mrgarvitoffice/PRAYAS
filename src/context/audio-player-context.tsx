@@ -74,8 +74,8 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         updatedArticle = {
             ...updatedArticle,
             title: englishSummary.heading,
-            summary: englishSummary.important_points.join(' '),
-            importantPoints: englishSummary.important_points,
+            summary: englishSummary.important_points.join(' '), // Keep a concatenated version for simple display if needed
+            importantPoints: englishSummary.important_points, // Keep the array for list rendering
             titleHi: hindiSummary.translatedTitle,
             summaryHi: hindiSummary.summaryPoints.join(' '),
             importantPointsHi: hindiSummary.summaryPoints,
@@ -89,8 +89,8 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     
     // Always generate a fresh audio clip for the requested language
     const contentToRead = language === 'hi'
-        ? `Title: ${updatedArticle.titleHi}. Summary: ${updatedArticle.summaryHi}`
-        : `Title: ${updatedArticle.title}. Summary: ${updatedArticle.summary}`;
+        ? `Title: ${updatedArticle.titleHi}. Summary: ${updatedArticle.importantPointsHi.join('. ')}`
+        : `Title: ${updatedArticle.title}. Summary: ${updatedArticle.importantPoints.join('. ')}`;
 
     if (!contentToRead.trim()) {
         throw new Error("Cannot generate audio from empty content.");
