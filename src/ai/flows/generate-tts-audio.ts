@@ -60,6 +60,9 @@ const generateTtsAudioFlow = ai.defineFlow({
   inputSchema: GenerateTtsAudioInputSchema,
   outputSchema: GenerateTtsAudioOutputSchema,
 }, async ({ script, language }) => {
+  if (!script.trim()) {
+    throw new Error('Cannot generate audio from an empty script.');
+  }
 
   const voice1 = language === 'hi' ? 'Salil' : 'Algenib';
   const voice2 = language === 'hi' ? 'Aditi' : 'Achernar';
@@ -93,7 +96,7 @@ const generateTtsAudioFlow = ai.defineFlow({
     });
 
     if (!media || !media.url) {
-        throw new Error('Audio generation failed, no media was returned.');
+        throw new Error('Audio generation failed, no media was returned from the AI model.');
     }
 
     const audioBuffer = Buffer.from(
@@ -119,7 +122,10 @@ export async function generateTtsAudio(input: GenerateTtsAudioInput): Promise<Ge
         if (error instanceof Error) {
             if (error.message.includes('429')) {
                 errorMessage = 'You have exceeded the daily limit for audio generation. Please try again tomorrow.';
-            } else {
+            } else if (error.message.includes('400')) {
+                errorMessage = 'The request was invalid, possibly due to a script that is too long or contains unsupported characters. Please try again with different articles.'
+            }
+             else {
                 errorMessage = error.message;
             }
         }

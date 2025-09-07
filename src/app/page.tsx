@@ -753,7 +753,7 @@ const NewsApp = () => {
                            <StopCircle className="h-5 w-5" />
                         </Button>
                     )}
-                     <Button onClick={handleGeneratePodcastAudio} variant="outline" size="icon" disabled={isGeneratingHqAudio}>
+                     <Button onClick={handleGeneratePodcastAudio} variant="outline" size="icon" disabled={isGeneratingHqAudio || !generatedPodcastScript}>
                         {isGeneratingHqAudio ? <Loader2 className="h-5 w-5 animate-spin" /> :  <Headphones className="h-5 w-5" />}
                     </Button>
                 </div>

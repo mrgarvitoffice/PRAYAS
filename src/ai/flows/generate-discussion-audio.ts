@@ -132,6 +132,18 @@ const generateDiscussionScriptFlow = ai.defineFlow({
      throw new Error("The AI failed to generate a valid script from the provided articles. The content may be too complex or short.");
   }
 
+  // Enforce a hard character limit to prevent TTS token errors
+  const MAX_SCRIPT_LENGTH = 4000;
+  if (script.length > MAX_SCRIPT_LENGTH) {
+    console.warn(`[AI Flow - Discussion Script] Script is too long (${script.length} chars), truncating to ${MAX_SCRIPT_LENGTH}.`);
+    script = script.substring(0, MAX_SCRIPT_LENGTH);
+    const lastNewline = script.lastIndexOf('\n');
+    if (lastNewline > 0) {
+      script = script.substring(0, lastNewline);
+    }
+  }
+
+
   console.log('[AI Flow - Discussion Script] Dialogue script generated successfully.');
 
   return {
