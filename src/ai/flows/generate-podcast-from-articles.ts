@@ -32,11 +32,8 @@ export async function generatePodcastFromArticles(input: GeneratePodcastFromArti
     return await generatePodcastFromArticlesFlow(input);
  } catch (error: any) {
     console.error("[AI ACTION Error - Podcast] Flow failed:", error);
-    const errorMessage = error.message || "An unexpected error occurred.";
-    if (errorMessage.toLowerCase().includes("script")) {
-      throw new Error("The AI failed to create a podcast script from the provided articles. This can sometimes happen if the content is too short or complex.");
-    }
-    throw new Error(`Failed to generate podcast audio. Error: ${errorMessage}`);
+    // Pass the specific error from the sub-flow directly to the client
+    throw new Error(`Failed to generate podcast. ${error.message}`);
   }
 }
 
@@ -71,8 +68,9 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
   console.log('[AI Flow - Podcast] Generating dialogue script...');
   const { script } = await generatePodcastScript({ articles, language });
   
+  // This is a critical validation step. If the script is empty, we must stop.
   if (!script) {
-     throw new Error("The podcast script generation returned an empty script.");
+     throw new Error("The AI returned an empty or invalid script. This can happen with very short or complex content. Please try a different set of articles.");
   }
   console.log('[AI Flow - Podcast] Dialogue script generated successfully.');
   
@@ -95,7 +93,7 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
   });
 
   if (!media) {
-    throw new Error('TTS model did not return any media.');
+    throw new Error('The Text-to-Speech model did not return any audio data.');
   }
   console.log('[AI Flow - Podcast] TTS audio data received.');
 

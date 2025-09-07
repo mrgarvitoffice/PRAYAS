@@ -2,7 +2,7 @@
 'use server';
 /**
  * @fileOverview This file defines a Genkit flow for generating a podcast script from a list of articles.
- * It follows a robust pattern with a dedicated prompt for content generation.
+ * It follows a robust pattern with a dedicated prompt for content generation and includes self-healing.
  *
  * It exports:
  * - `generatePodcastScript`: The main function to generate the script.
@@ -28,8 +28,9 @@ export async function generatePodcastScript(input: GeneratePodcastScriptInput): 
   try {
     return await generatePodcastScriptFlow(input);
   } catch (error: any) {
-    console.error("[AI Action Error - Podcast Script] Flow failed:", error);
-    throw new Error(`Failed to generate podcast script. Error: ${error.message}`);
+    console.error("[AI ACTION Error - Podcast Script] Flow failed:", error);
+    // This makes sure the error message from the prompt/flow is passed to the user.
+    throw new Error(`Script generation failed: ${error.message}`);
   }
 }
 
@@ -54,7 +55,7 @@ Speaker1: [First line of dialogue in specified language]
 Speaker2: [Second line of dialogue in specified language]
 ...and so on.
 
-Do NOT add any other text, introductions, or summaries. The entire output should be just the dialogue script.
+Do NOT add any other text, introductions, summaries, or explanations. The entire output should be just the dialogue script.
 
 News Articles to Convert:
 ---
@@ -95,21 +96,27 @@ const generatePodcastScriptFlow = ai.defineFlow({
   }).join('\n\n---\n\n');
   
   if (!articleSnippets.trim()) {
-    throw new Error("Cannot generate script from empty article content.");
+    throw new Error("Cannot generate script from empty or invalid article content.");
   }
 
   const { text } = await dialoguePrompt({ articleSnippets, language });
   
-  let dialogueScript = text.trim();
+  if (!text) {
+     throw new Error("The AI model returned no text. The operation cannot proceed.");
+  }
   
   // Self-healing: Clean up the script to ensure it only contains valid dialogue lines.
-  dialogueScript = dialogueScript
+  // This is a more robust way to ensure a clean script.
+  const dialogueScript = text
     .split('\n')
+    .map(line => line.trim()) // Trim whitespace from each line
     .filter(line => line.startsWith('Speaker1:') || line.startsWith('Speaker2:'))
     .join('\n');
 
+  // Final validation: If after all cleanup, the script is still empty, throw an error.
   if (!dialogueScript) {
-    throw new Error("AI failed to generate a valid script from the provided articles.");
+    console.error("AI generated text but it contained no valid dialogue lines. Raw output:", text);
+    throw new Error("The AI failed to generate a valid script from the provided articles. The content may be too complex or short.");
   }
   
   return { script: dialogueScript };
