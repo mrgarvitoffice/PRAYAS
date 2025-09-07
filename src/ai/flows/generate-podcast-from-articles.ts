@@ -65,7 +65,7 @@ async function toWav(
 // Prompt to generate the dialogue script.
 const dialoguePrompt = ai.definePrompt({
     name: 'generatePodcastScriptForTtsPrompt',
-    model: 'googleai/gemini-2.5-flash-lite',
+    model: 'googleai/gemini-1.5-flash-latest',
     input: { schema: z.object({ articleSnippets: z.string() }) },
     output: { format: 'text' },
     prompt: `You are an expert multilingual podcast scriptwriter. Your primary task is to convert the following news articles into a natural-sounding, two-person dialogue script.
@@ -100,17 +100,10 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
 
   // Step 1: Generate the podcast script using an integrated prompt.
   console.log('[AI Flow - Podcast] Generating dialogue script...');
-
-  const getArticleContent = (article: Article) => {
-    const title = article.title;
-    const summary = article.summary;
-    return `Title: ${title}. Summary: ${summary}`;
-  };
-
+  
+  // Simplify the content sent to the AI to be more robust.
   const articleSnippets = articles.map(article => {
-    const source = article.source?.name || 'an unknown source';
-    const content = getArticleContent(article);
-    return `Source: ${source}\nContent: ${content}`;
+    return `Title: ${article.title}\nSummary: ${article.summary}`;
   }).join('\n\n---\n\n');
 
   if (!articleSnippets.trim()) {
