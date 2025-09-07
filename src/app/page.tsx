@@ -263,7 +263,6 @@ const NewsApp = () => {
       
       const articlesForPodcast = news.slice(0, 10);
       
-      toast({ title: 'Generating podcast script...', description: 'Your articles are ready, now creating the script.' });
       const result = await generatePodcastFromArticles({ articles: articlesForPodcast });
       setGeneratedPodcastAudio(result.audioDataUri);
       toast({ title: 'Podcast generated successfully!', description: 'You can now play or download it.' });
