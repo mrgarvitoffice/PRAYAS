@@ -35,11 +35,8 @@ export async function generatePodcastFromArticles(input: GeneratePodcastFromArti
     return await generatePodcastScriptAndAudioFlow({ articles });
  } catch (error: any) {
     console.error("[AI ACTION Error - Podcast] Top-level flow failed:", error);
-    let errorMessage = error.message || 'An unknown error occurred during podcast generation.';
-     if (error.message.includes('429')) {
-      errorMessage = 'You have exceeded the daily limit for podcast generation. Please try again tomorrow.';
-    }
     // Pass a clear, user-friendly error message.
+    const errorMessage = error.message || 'An unknown error occurred during podcast generation.';
     throw new Error(errorMessage);
   }
 }
@@ -130,6 +127,12 @@ const generatePodcastScriptAndAudioFlow = ai.defineFlow({
      throw new Error("The AI failed to generate a valid script from the provided articles. The content may be too complex or short.");
   }
   
+  // Hard limit on script length to prevent TTS model from failing.
+  if (script.length > 4000) {
+    console.warn(`[AI Flow - Podcast] Script was too long (${script.length} chars) and was truncated to 4000.`);
+    script = script.substring(0, 4000);
+  }
+
   console.log('[AI Flow - Podcast] Dialogue script generated successfully.');
   
   // Step 2: Use the generated script to create the TTS audio.
