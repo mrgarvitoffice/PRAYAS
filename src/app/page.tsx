@@ -23,6 +23,7 @@ import {
   ListMusic,
   Trash2,
   StopCircle,
+  Pause,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -86,10 +87,24 @@ const NewsApp = () => {
   const [isGeneratingPodcast, setIsGeneratingPodcast] = useState(false);
   const [generatedPodcastAudio, setGeneratedPodcastAudio] = useState<string | null>(null);
 
+  const [isSpeakingHeadlines, setIsSpeakingHeadlines] = useState(false);
+  const [isPausedHeadlines, setIsPausedHeadlines] = useState(false);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const utteranceRef = React.useRef<SpeechSynthesisUtterance | null>(null);
+
+  useEffect(() => {
+    const handleVoicesChanged = () => {
+      const availableVoices = window.speechSynthesis.getVoices();
+      setVoices(availableVoices);
+    };
+    window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
+    handleVoicesChanged();
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
+  }, []);
+  
   const handleArticleUpdate = useCallback((updatedArticle: Article) => {
     setNews(prevNews => prevNews.map(a => a.id === updatedArticle.id ? updatedArticle : a));
-    audioPlayer.updateArticleInPlaylist(updatedArticle);
-  }, [audioPlayer]);
+  }, []);
   
   const fetchNewsCallback = useCallback(async (currentFilters: typeof filters) => {
     setLoading(true);
@@ -149,9 +164,6 @@ const NewsApp = () => {
     return () => clearTimeout(handler);
   }, [filters.search, filters.region, filters.state, filters.city, filters.category, fetchNewsCallback]);
 
-  useEffect(() => {
-    audioPlayer.onArticleProcessed = handleArticleUpdate;
-  }, [audioPlayer, handleArticleUpdate]);
 
   const clearFilters = () => {
     const newFilters = {
@@ -172,27 +184,27 @@ const NewsApp = () => {
   }, [filters.state, filters.region]);
   
   const handleCreatePodcast = () => {
-    if (audioPlayer.playlist.length > 0) {
+    if (news.length > 0) {
       setGeneratedPodcastAudio(null);
       setIsPodcastModalOpen(true);
     } else {
        toast({
         variant: "destructive",
-        title: "Playlist is Empty",
-        description: "Add articles to your playlist to create a podcast.",
+        title: "No Articles Available",
+        description: "There are no news articles to create a podcast from.",
       });
     }
   };
 
   const handleGeneratePodcast = async () => {
-    if (audioPlayer.playlist.length === 0) return;
+    if (news.length === 0) return;
     setIsGeneratingPodcast(true);
     setGeneratedPodcastAudio(null);
     try {
       toast({ title: 'Generating your podcast...', description: 'This may take a minute or two.' });
       
       const articlesForPodcast = await Promise.all(
-        audioPlayer.playlist.map(async (article) => {
+        news.map(async (article) => {
           if ((podcastLanguage === 'hi' || podcastLanguage === 'bilingual') && !article.titleHi) {
              const hindiSummary = await translateAndSummarizeArticleHindi({
                 articleTitle: article.title,
@@ -204,7 +216,7 @@ const NewsApp = () => {
                 summaryHi: hindiSummary.summaryPoints.join(' '),
                 importantPointsHi: hindiSummary.summaryPoints,
               };
-              handleArticleUpdate(processedArticle); // Update master state
+              handleArticleUpdate(processedArticle);
               return processedArticle;
           }
           return article;
@@ -226,18 +238,86 @@ const NewsApp = () => {
     }
   };
 
-  const articleIsInPlaylist = (articleId: string) => {
-    return audioPlayer.playlist.some(a => a.id === articleId);
-  }
-
   const readAllHeadlines = useCallback(() => {
-    const headlines = news.map(a => a.title).filter(Boolean).join('. ');
-    if (headlines) {
-      audioPlayer.playText(headlines, filters.language);
-    } else {
-      toast({ title: 'No headlines to read', description: 'There are no articles with headlines to read out.' });
+    if (isSpeakingHeadlines && !isPausedHeadlines) {
+      window.speechSynthesis.pause();
+      setIsPausedHeadlines(true);
+      return;
     }
-  }, [news, audioPlayer, filters.language, toast]);
+    
+    if (isPausedHeadlines) {
+      window.speechSynthesis.resume();
+      setIsPausedHeadlines(false);
+      return;
+    }
+
+    const headlines = news
+      .map(a => filters.language === 'hi' && a.titleHi ? a.titleHi : a.title)
+      .filter(Boolean)
+      .join('. ');
+      
+    if (!headlines) {
+      toast({ title: 'No headlines to read', description: 'There are no articles with headlines to read out.' });
+      return;
+    }
+    
+    const utterance = new SpeechSynthesisUtterance(headlines);
+    utteranceRef.current = utterance;
+
+    const langCode = filters.language === 'hi' ? 'hi-IN' : 'en-US';
+    utterance.lang = langCode;
+
+    // Find the best voice
+    const voice = voices.find(v => v.name.includes('Google') && v.lang === langCode) ||
+                  voices.find(v => v.name.includes('Natural') && v.lang.startsWith(filters.language)) ||
+                  voices.find(v => v.lang === langCode && v.localService) ||
+                  voices.find(v => v.lang === langCode);
+
+    if (voice) {
+      utterance.voice = voice;
+    }
+
+    utterance.onstart = () => {
+      setIsSpeakingHeadlines(true);
+      setIsPausedHeadlines(false);
+    };
+
+    utterance.onend = () => {
+      setIsSpeakingHeadlines(false);
+      setIsPausedHeadlines(false);
+      utteranceRef.current = null;
+    };
+
+    utterance.onerror = (event) => {
+        console.error('SpeechSynthesisUtterance.onerror', event);
+        toast({
+            variant: "destructive",
+            title: "Speech Error",
+            description: `Could not read headlines. Error: ${event.error}`,
+        });
+        setIsSpeakingHeadlines(false);
+        setIsPausedHeadlines(false);
+    };
+
+    window.speechSynthesis.speak(utterance);
+
+  }, [news, filters.language, toast, voices, isSpeakingHeadlines, isPausedHeadlines]);
+  
+  const stopReadingHeadlines = () => {
+    if (utteranceRef.current) {
+        window.speechSynthesis.cancel();
+        setIsSpeakingHeadlines(false);
+        setIsPausedHeadlines(false);
+        utteranceRef.current = null;
+    }
+  }
+  
+  useEffect(() => {
+    // Cleanup speech synthesis on component unmount or filter change
+    return () => {
+      window.speechSynthesis.cancel();
+    };
+  }, []);
 
   return (
     <TooltipProvider>
@@ -254,15 +334,15 @@ const NewsApp = () => {
             </div>
              <div className="flex items-center gap-2">
                 <Button variant="outline" onClick={readAllHeadlines} disabled={news.length === 0 || audioPlayer.isPlaying}>
-                    <Play className="mr-2 h-4 w-4" />
-                    Read Headlines
+                    {isSpeakingHeadlines && !isPausedHeadlines ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
+                    {isSpeakingHeadlines && !isPausedHeadlines ? 'Pause' : isPausedHeadlines ? 'Resume' : 'Read Headlines'}
                 </Button>
-                 {audioPlayer.isPlaying && (
-                  <Button variant="outline" size="icon" onClick={() => audioPlayer.stop()}>
+                {(isSpeakingHeadlines || isPausedHeadlines) && (
+                  <Button variant="outline" size="icon" onClick={stopReadingHeadlines}>
                     <StopCircle className="h-5 w-5" />
                   </Button>
                 )}
-              <Button variant="outline" onClick={handleCreatePodcast} disabled={audioPlayer.playlist.length === 0}>
+              <Button variant="outline" onClick={handleCreatePodcast} disabled={news.length === 0}>
                 <Podcast className="mr-2 h-4 w-4" />
                 Create Podcast
               </Button>
@@ -443,7 +523,7 @@ const NewsApp = () => {
                     </div>
                     <div className="bg-slate-50 dark:bg-slate-800 p-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700/50">
                       <div className="flex items-center gap-2">
-                         <button onClick={() => audioPlayer.playArticle(article, filters.language)} disabled={isCurrentlyLoading} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors" aria-label="Listen to Article">
+                         <button onClick={() => audioPlayer.playArticle(article, filters.language)} disabled={isCurrentlyLoading || isSpeakingHeadlines} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Listen to Article">
                             {isCurrentlyLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Headphones className="w-5 h-5"/>}
                          </button>
                          {needsProcessing && !article.audioDataUri && (
@@ -456,16 +536,6 @@ const NewsApp = () => {
                              </TooltipContent>
                            </Tooltip>
                           )}
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button onClick={() => audioPlayer.addOrRemoveFromPlaylist(article)} className={cn("p-2 text-slate-500 rounded-full transition-colors", articleIsInPlaylist(article.id) ? "bg-indigo-100 text-indigo-600 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300" : "hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700")} aria-label="Add to Playlist">
-                                  {articleIsInPlaylist(article.id) ? <Trash2 className="w-5 h-5"/> : <Plus className="w-5 h-5"/>}
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>{articleIsInPlaylist(article.id) ? "Remove from Playlist" : "Add to Playlist"}</p>
-                            </TooltipContent>
-                          </Tooltip>
 
                          <a href={article.contentUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 flex items-center gap-1.5">
                             Read More <ExternalLink className="w-4 h-4" />
@@ -493,7 +563,7 @@ const NewsApp = () => {
               <DialogDescription>
                 {generatedPodcastAudio
                   ? 'Your podcast is ready! You can now play it below or download it.'
-                  : `These ${audioPlayer.playlist.length} articles from your playlist will be included. Choose a language to generate the audio.`}
+                  : `A podcast will be generated from the ${news.length} currently visible articles. Choose a language for the audio.`}
               </DialogDescription>
             </DialogHeader>
 
@@ -523,7 +593,7 @@ const NewsApp = () => {
               <>
                 <div className="max-h-60 overflow-y-auto p-1 my-4 border rounded-md">
                   <ul className="space-y-2">
-                    {audioPlayer.playlist.map((article, index) => (
+                    {news.map((article, index) => (
                       <li key={article.id} className="flex items-center justify-between p-2 rounded-md bg-muted">
                         <span className="truncate pr-4 text-sm">
                           {index + 1}. {filters.language === 'hi' && article.titleHi ? article.titleHi : article.title}
@@ -569,3 +639,5 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
+
+    
