@@ -87,7 +87,7 @@ const NewsApp = () => {
 
   const handleArticleUpdate = useCallback((updatedArticle: Article) => {
     setNews(prevNews => prevNews.map(a => a.id === updatedArticle.id ? updatedArticle : a));
-    audioPlayer.updateArticleInList(updatedArticle);
+    audioPlayer.updateArticleInPlaylist(updatedArticle);
   }, [audioPlayer]);
   
   const processAndSetNews = useCallback(async (articles: Article[], language: Language) => {
@@ -161,6 +161,22 @@ const NewsApp = () => {
       setLoading(false);
     }
   }, []);
+
+  const handleListenToAll = () => {
+    if (news.length > 0) {
+      audioPlayer.playPlaylist(news, filters.language);
+      toast({
+        title: 'Playing all articles',
+        description: `Starting playlist with ${news.length} articles.`,
+      });
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'No Articles to Play',
+        description: 'There are no articles in the current feed to create a playlist.',
+      });
+    }
+  };
 
   const handleFilterChange = useCallback((filterType: string, value: string) => {
     setFilters(prev => {
@@ -286,6 +302,10 @@ const NewsApp = () => {
               </p>
             </div>
              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={handleListenToAll} disabled={loading || news.length === 0}>
+                    <Rss className="mr-2 h-4 w-4" />
+                    Listen to All
+                </Button>
               <Button variant="outline" onClick={handleCreatePodcast} disabled={loading || news.length === 0}>
                 <Podcast className="mr-2 h-4 w-4" />
                 Create Podcast

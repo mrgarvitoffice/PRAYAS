@@ -3,7 +3,7 @@
 
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import type { Article, Language } from '@/lib/types';
-import { generateTTSAudioClip } from '@/ai/flows/generate-tts-audio-clip';
+import { generateDiscussionAudio } from '@/ai/flows/generate-discussion-audio';
 import { summarizeArticle } from '@/ai/flows/summarize-article';
 import { translateAndSummarizeArticleHindi } from '@/ai/flows/translate-and-summarize-article-hindi';
 import { useToast } from '@/hooks/use-toast';
@@ -15,10 +15,11 @@ interface AudioPlayerContextType {
   isLoading: boolean;
   progress: number;
   playArticle: (article: Article, language: Language) => void;
+  playPlaylist: (articles: Article[], language: Language) => void;
   togglePlayPause: () => void;
   stop: () => void;
   seek: (progress: number) => void;
-  updateArticleInList: (article: Article) => void;
+  updateArticleInPlaylist: (article: Article) => void;
   onArticleProcessed?: (article: Article) => void; // Optional callback
 }
 
@@ -37,11 +38,116 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [playlistLanguage, setPlaylistLanguage] = useState<Language>('en');
 
-  // This is a proxy to allow parent components to update their state
   const onArticleProcessedRef = useRef<(article: Article) => void>();
+  
+  const stop = useCallback((isSoftStop = false) => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+      setIsPlaying(false);
+      setProgress(0);
+      setCurrentArticle(null);
+      setProcessedArticle(null);
+      if (!isSoftStop) {
+          setPlaylist([]);
+          setCurrentTrackIndex(0);
+      }
+    }
+  }, []);
+
+  const playNextInPlaylist = useCallback(() => {
+    if (playlist.length > 0 && currentTrackIndex < playlist.length - 1) {
+      const nextIndex = currentTrackIndex + 1;
+      setCurrentTrackIndex(nextIndex);
+      // The processAndPlayArticle function is defined below, so we can't call it directly here.
+      // The useEffect hook will handle playing the next track.
+    } else {
+      // Playlist finished
+      stop();
+    }
+  }, [playlist, currentTrackIndex, stop]);
+
+  const processAndPlayArticle = useCallback(async (article: Article, language: Language, isPlaylist: boolean) => {
+    if (!audioRef.current) return;
+
+    if (currentArticle?.id !== article.id || !audioRef.current.src) {
+        stop(true); // Soft stop, doesn't clear playlist
+        setIsLoading(true);
+        setCurrentArticle(article);
+        setProcessedArticle(null);
+    } else {
+        // If it's the same article and it's loaded, just play/pause
+        if (isPlaying) {
+          audioRef.current.pause();
+        } else {
+          audioRef.current.play();
+        }
+        return;
+    }
+
+    try {
+        let updatedArticle = { ...article };
+        const needsProcessing = (language === 'en' && updatedArticle.importantPoints.length === 0) || (language === 'hi' && !updatedArticle.titleHi);
+
+        if (needsProcessing) {
+            toast({
+                title: "Generating Smart Summary...",
+                description: `Processing "${article.title}"`,
+            });
+            
+            const [englishSummary, hindiSummary] = await Promise.all([
+                summarizeArticle({ title: article.title, full_text: article.rawContent }),
+                translateAndSummarizeArticleHindi({ articleTitle: article.title, articleContent: article.rawContent })
+            ]);
+
+            updatedArticle = {
+                ...updatedArticle,
+                title: englishSummary.heading,
+                summary: englishSummary.important_points.join(' '),
+                importantPoints: englishSummary.important_points,
+                titleHi: hindiSummary.translatedTitle,
+                summaryHi: hindiSummary.summaryPoints.join(' '),
+                importantPointsHi: hindiSummary.summaryPoints,
+            };
+            
+            if (onArticleProcessedRef.current) {
+                onArticleProcessedRef.current(updatedArticle);
+            }
+        }
+        
+        setProcessedArticle(updatedArticle);
+        
+        const contentToRead = language === 'hi' 
+            ? `Title: ${updatedArticle.titleHi}. Summary: ${updatedArticle.summaryHi}`
+            : `Title: ${updatedArticle.title}. Summary: ${updatedArticle.summary}`;
+            
+        if (!contentToRead.trim()) {
+            throw new Error("Cannot generate audio from empty content.");
+        }
+
+        const result = await generateDiscussionAudio({ content: contentToRead, language });
+        audioRef.current.src = result.audioDataUri;
+        await audioRef.current.play();
+
+    } catch (error) {
+        console.error('On-demand processing or TTS Generation failed:', error);
+        toast({
+            variant: 'destructive',
+            title: 'Playback Failed',
+            description: error instanceof Error ? error.message : 'Could not process or generate the audio for this article.',
+        });
+        setCurrentArticle(null);
+        setProcessedArticle(null);
+        if (isPlaylist) {
+            playNextInPlaylist();
+        }
+    } finally {
+        setIsLoading(false);
+    }
+  }, [toast, currentArticle, isPlaying, playNextInPlaylist, stop]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && !audioRef.current) {
       audioRef.current = new Audio();
       const audio = audioRef.current;
 
@@ -50,7 +156,14 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
           setProgress((audio.currentTime / audio.duration) * 100);
         }
       };
-      const handleEnded = () => setIsPlaying(false);
+      const handleEnded = () => {
+          if (playlist.length > 0 && currentTrackIndex < playlist.length - 1) {
+              playNextInPlaylist();
+          } else {
+              setIsPlaying(false);
+              stop();
+          }
+      };
       const handlePlay = () => setIsPlaying(true);
       const handlePause = () => setIsPlaying(false);
 
@@ -67,128 +180,47 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         audio.pause();
       };
     }
-  }, []);
+  }, [playlist, currentTrackIndex, playNextInPlaylist, stop]);
+
+  // Effect to handle playlist progression
+  useEffect(() => {
+    if (playlist.length > 0 && currentTrackIndex > 0) {
+      processAndPlayArticle(playlist[currentTrackIndex], playlistLanguage, true);
+    }
+  }, [currentTrackIndex, playlist, playlistLanguage, processAndPlayArticle]);
   
-  const updateArticleInList = useCallback((article: Article) => {
-     setPlaylist(prev => prev.map(a => a.id === article.id ? article : a));
+  const updateArticleInPlaylist = useCallback((article: Article) => {
+    setPlaylist(prev => prev.map(a => a.id === article.id ? article : a));
     if (processedArticle?.id === article.id) {
       setProcessedArticle(article);
     }
   }, [processedArticle]);
 
   const playArticle = useCallback(async (article: Article, language: Language) => {
-    if (audioRef.current) {
-      if (currentArticle?.id === article.id) {
-        if (isPlaying) {
-          audioRef.current.pause();
-        } else {
-          audioRef.current.play();
-        }
-        return;
-      }
+    setPlaylist([]); // Clear any existing playlist
+    setCurrentTrackIndex(0);
+    setPlaylistLanguage(language);
+    processAndPlayArticle(article, language, false);
+  }, [processAndPlayArticle]);
 
-      setIsLoading(true);
-      setCurrentArticle(article);
-      setProcessedArticle(null);
-      setProgress(0);
-      setIsPlaying(false);
-      
-      try {
-        let finalTitle = article.title;
-        let finalPoints: string[] = [];
-        let updatedArticle = { ...article };
-
-        const needsProcessing = (language === 'hi' && !article.titleHi) || (language === 'en' && article.importantPoints.length === 0);
-
-        if (needsProcessing) {
-          toast({
-            title: "Generating Smart Summary...",
-            description: `Processing "${article.title}"`,
-          });
-          const [englishSummary, hindiSummary] = await Promise.all([
-            summarizeArticle({
-              title: article.title,
-              full_text: article.rawContent,
-            }),
-            translateAndSummarizeArticleHindi({
-              articleTitle: article.title,
-              articleContent: article.rawContent,
-            })
-          ]);
-          
-          updatedArticle = {
-            ...article,
-            title: englishSummary.heading,
-            titleHi: hindiSummary.translatedTitle,
-            importantPoints: englishSummary.important_points,
-            importantPointsHi: hindiSummary.summaryPoints,
-            summary: englishSummary.important_points.join(' '),
-            summaryHi: hindiSummary.summaryPoints.join(' '),
-          };
-          
-          if (onArticleProcessedRef.current) {
-            onArticleProcessedRef.current(updatedArticle);
-          }
-          setProcessedArticle(updatedArticle);
-
-        } else {
-          setProcessedArticle(article);
-        }
-        
-        finalTitle = language === 'hi' && updatedArticle.titleHi ? updatedArticle.titleHi : updatedArticle.title;
-        finalPoints = language === 'hi' && updatedArticle.importantPointsHi.length > 0 ? updatedArticle.importantPointsHi : (language === 'en' && updatedArticle.importantPoints.length > 0) ? updatedArticle.importantPoints : updatedArticle.summary.split('. ');
-
-        if(!finalTitle || finalPoints.length === 0) {
-            throw new Error("Content for TTS is not available after processing.")
-        }
-        
-        const ttsInput = {
-          title: finalTitle,
-          importantPoints: finalPoints,
-          language: language === 'hi' ? 'hi-IN' : 'en-IN',
-        };
-
-        const result = await generateTTSAudioClip(ttsInput);
-        audioRef.current.src = result.audioDataUri;
-        audioRef.current.play();
-
-      } catch (error) {
-        console.error('On-demand processing or TTS Generation failed:', error);
-        toast({
-          variant: 'destructive',
-          title: 'Playback Failed',
-          description: error instanceof Error ? error.message : 'Could not process or generate the audio for this article.',
-        });
-        setCurrentArticle(null);
-        setProcessedArticle(null);
-      } finally {
-        setIsLoading(false);
-      }
+  const playPlaylist = useCallback((articles: Article[], language: Language) => {
+    setPlaylist(articles);
+    setCurrentTrackIndex(0);
+    setPlaylistLanguage(language);
+    if (articles.length > 0) {
+        processAndPlayArticle(articles[0], language, true);
     }
-  }, [toast, currentArticle, isPlaying]);
+  }, [processAndPlayArticle]);
 
   const togglePlayPause = useCallback(() => {
     if (audioRef.current?.src) {
       if (isPlaying) {
         audioRef.current.pause();
       } else {
-        audioRef.current.play();
+        audio_ref.current.play();
       }
     }
   }, [isPlaying]);
-
-  const stop = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      setCurrentArticle(null);
-      setProcessedArticle(null);
-      setIsPlaying(false);
-      setProgress(0);
-      setPlaylist([]);
-      setCurrentTrackIndex(0);
-    }
-  }, []);
 
   const seek = useCallback((newProgress: number) => {
     if (audioRef.current && audioRef.current.duration) {
@@ -205,14 +237,17 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     isLoading,
     progress,
     playArticle,
+    playPlaylist,
     togglePlayPause,
     stop,
     seek,
-    updateArticleInList,
-    // onArticleProcessed is now a ref to be set by a consumer
+    updateArticleInPlaylist,
     set onArticleProcessed(callback: (article: Article) => void) {
       onArticleProcessedRef.current = callback;
     },
+    get onArticleProcessed() {
+      return onArticleProcessedRef.current;
+    }
   };
 
   return <AudioPlayerContext.Provider value={value}>{children}</AudioPlayerContext.Provider>;
