@@ -16,6 +16,8 @@ import type { Article, NewsDataArticle } from '@/lib/types';
 const FetchAndProcessNewsInputSchema = z.object({
   category: z.string().describe('The news category to fetch.'),
   country: z.string().describe('The country code (e.g., "in", "us").'),
+  state: z.string().optional().describe('The state to fetch news from.'),
+  city: z.string().optional().describe('The city to fetch news from.'),
 });
 export type FetchAndProcessNewsInput = z.infer<
   typeof FetchAndProcessNewsInputSchema
@@ -90,8 +92,8 @@ const fetchAndProcessNewsFlow = ai.defineFlow(
     inputSchema: FetchAndProcessNewsInputSchema,
     outputSchema: FetchAndProcessNewsOutputSchema,
   },
-  async ({ category, country }) => {
-    const newsResponse = await fetchNews(category, country);
+  async ({ category, country, state, city }) => {
+    const newsResponse = await fetchNews(category, country, state, city);
     const articles = newsResponse.results || [];
     
     // Filter out articles that have no title or content to process

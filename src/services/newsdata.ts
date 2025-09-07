@@ -11,11 +11,15 @@ const API_BASE_URL = 'https://newsdata.io/api/1/news';
  * Fetches news articles from the NewsData.io API.
  * @param category The search category for articles.
  * @param country The country to fetch news from.
+ * @param state The state to fetch news from.
+ * @param city The city to fetch news from.
  * @returns A promise that resolves to the API response.
  */
 export async function fetchNews(
   category: string = 'top',
-  country: string = 'in'
+  country: string = 'in',
+  state?: string,
+  city?: string
 ): Promise<NewsDataResponse> {
   const apiKey = process.env.NEWSDATA_API_KEY;
   if (!apiKey) {
@@ -28,12 +32,22 @@ export async function fetchNews(
     country: country.toLowerCase(),
   });
 
+  // Build a query string for location if state/city are provided
+  const locationQuery = [
+    city && city.toLowerCase() !== 'all' ? city : '',
+    state && state.toLowerCase() !== 'all india' && state.toLowerCase() !== 'all' ? state : ''
+  ].filter(Boolean).join(', ');
+
   // NewsData.io requires `q` OR `category` when `country` is specified.
   if (category && category.toLowerCase() !== 'all') {
+    // If a category is selected, use it. Append location to q if it exists.
     params.set('category', category.toLowerCase());
+    if (locationQuery) {
+        params.set('q', locationQuery);
+    }
   } else {
-    // Use a general query for the 'All' category, as `q` is required if `category` is not present.
-    params.set('q', 'news');
+    // If 'All' categories, use location query or a general 'news' query.
+    params.set('q', locationQuery || 'news');
   }
 
   const url = `${API_BASE_URL}?${params.toString()}`;

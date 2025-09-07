@@ -46,12 +46,14 @@ export function PrayasTerminal() {
 
   // States for active filters
   const [activeRegion, setActiveRegion] = useState('India');
+  const [activeState, setActiveState] = useState('All India');
+  const [activeCity, setActiveCity] = useState('All');
   const [activeCategory, setActiveCategory] = useState('All');
 
   // States for pending filter selections in sidebar
   const [pendingRegion, setPendingRegion] = useState(activeRegion);
-  const [pendingState, setPendingState] = useState('All India');
-  const [pendingCity, setPendingCity] = useState('All');
+  const [pendingState, setPendingState] = useState(activeState);
+  const [pendingCity, setPendingCity] = useState(activeCity);
   const [pendingCategory, setPendingCategory] = useState(activeCategory);
 
   const [language, setLanguage] = useState<Language>('en');
@@ -62,11 +64,11 @@ export function PrayasTerminal() {
   const states = useMemo(() => Object.keys(locationData[pendingRegion] ? locationData[pendingRegion].states : {}), [pendingRegion]);
   const cities = useMemo(() => (pendingRegion === 'India' && pendingState && locationData.India.states[pendingState]) ? locationData.India.states[pendingState] : [], [pendingRegion, pendingState]);
 
-  const loadNews = useCallback(async (category: string, region: string) => {
+  const loadNews = useCallback(async (category: string, region: string, state: string, city: string) => {
     setIsLoading(true);
     try {
       const countryCode = region === 'World' ? 'us' : 'in';
-      const fetchedArticles = await fetchAndProcessNews({ category, country: countryCode });
+      const fetchedArticles = await fetchAndProcessNews({ category, country: countryCode, state, city });
       setArticles(fetchedArticles);
     } catch (error) {
       console.error('Failed to fetch news:', error);
@@ -82,15 +84,14 @@ export function PrayasTerminal() {
   }, [toast]);
 
   useEffect(() => {
-    loadNews(activeCategory, activeRegion);
-  }, [activeCategory, activeRegion, loadNews]);
+    loadNews(activeCategory, activeRegion, activeState, activeCity);
+  }, [activeCategory, activeRegion, activeState, activeCity, loadNews]);
 
   const applyFilters = () => {
     setActiveRegion(pendingRegion);
     setActiveCategory(pendingCategory);
-    // State/City filters are not yet supported by the backend, but are kept for future use.
-    // setActiveState(pendingState);
-    // setActiveCity(pendingCity);
+    setActiveState(pendingState);
+    setActiveCity(pendingCity);
   };
 
   const handleRegionChange = (value: string) => {
