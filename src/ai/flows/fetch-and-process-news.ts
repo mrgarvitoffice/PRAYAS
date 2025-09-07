@@ -111,7 +111,9 @@ const fetchAndProcessNewsFlow = ai.defineFlow(
   },
   async ({ category, country }) => {
     const newsResponse = await fetchNews(category, country);
-    const articles = newsResponse.results || [];
+    // The free tier of newsdata.io returns 10 articles by default.
+    // We'll take the first 8 as requested.
+    const articles = (newsResponse.results || []).slice(0, 8);
 
     const processingPromises = articles.map(processArticle);
     const processedArticles = await Promise.all(processingPromises);
