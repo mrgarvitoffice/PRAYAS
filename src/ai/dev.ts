@@ -1,1 +1,6 @@
-// Flows will be imported for their side effects in this file.
+import { config } from 'dotenv';
+config();
+
+import '@/ai/flows/summarize-article.ts';
+import '@/ai/flows/translate-and-summarize-article-hindi.ts';
+import '@/ai/flows/generate-tts-audio-clip.ts';
