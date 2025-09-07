@@ -37,6 +37,18 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
+        hostname: 'cdn.mos.cms.futurecdn.net',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.windows.net',
+        port: '',
+        pathname: '/**',
+      },
+       {
+        protocol: 'https',
         hostname: '**.net',
         port: '',
         pathname: '/**',
