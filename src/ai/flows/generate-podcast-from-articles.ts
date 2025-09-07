@@ -2,7 +2,7 @@
 'use server';
 /**
  * @fileOverview This file defines a Genkit flow for generating a podcast episode from a list of news articles.
- * It orchestrates a two-step process: first generating a script, then generating audio, all within a single flow.
+ * It orchestrates a multi-step process: first summarizing articles, then generating a script, and finally generating audio.
  *
  * It exports:
  * - `generatePodcastFromArticles`: The main function to generate the podcast.
@@ -14,6 +14,7 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import wav from 'wav';
 import type { Article } from '@/lib/types';
+import { summarizeArticlesForPodcast } from './summarize-articles-for-podcast';
 
 const GeneratePodcastFromArticlesInputSchema = z.object({
   articles: z.array(z.any()).describe('An array of article objects to include in the podcast.'),
@@ -25,21 +26,19 @@ const GeneratePodcastFromArticlesOutputSchema = z.object({
 });
 export type GeneratePodcastFromArticlesOutput = z.infer<typeof GeneratePodcastFromArticlesOutputSchema>;
 
+// This is the top-level function that the client will call.
 export async function generatePodcastFromArticles(input: GeneratePodcastFromArticlesInput): Promise<GeneratePodcastFromArticlesOutput> {
  try {
-    return await generatePodcastFromArticlesFlow(input);
+    // First, run the summarization flow
+    const summarizedArticles = await summarizeArticlesForPodcast({ articles: input.articles });
+    // Then, pass the summarized articles to the script and audio generation flow
+    return await generatePodcastFromArticlesFlow(summarizedArticles);
  } catch (error: any) {
-    console.error("[AI ACTION Error - Podcast] Flow failed:", error);
-    let errorMessage = error.message || 'An unknown error occurred.';
-    // Handle specific, known error messages to make them more user-friendly.
-    if (error.message.includes('500') || error.message.includes('internal error')) {
-       errorMessage = "The audio generation service failed. This might be due to the AI-generated script being too long or complex. Please try again with fewer articles.";
-    } else if (errorMessage.toLowerCase().includes("script")) {
-       errorMessage = "The AI failed to create a podcast script from the provided articles. This can sometimes happen if the content is too short or complex.";
-    } else if (errorMessage.includes('429')) {
+    console.error("[AI ACTION Error - Podcast] Top-level flow failed:", error);
+    let errorMessage = error.message || 'An unknown error occurred during podcast generation.';
+     if (errorMessage.includes('429')) {
       errorMessage = 'You have exceeded the daily limit for podcast generation. Please try again tomorrow.';
     }
-    // Pass a clear, user-friendly error message.
     throw new Error(errorMessage);
   }
 }
@@ -65,28 +64,28 @@ async function toWav(
   });
 }
 
-// Prompt to generate the dialogue script.
+// Prompt to generate the dialogue script from high-quality summaries.
 const dialoguePrompt = ai.definePrompt({
     name: 'generatePodcastScriptForTtsPrompt',
     model: 'googleai/gemini-2.5-flash-lite',
     input: { schema: z.object({ articleSnippets: z.string() }) },
     output: { format: 'text' },
-    prompt: `You are an expert multilingual podcast scriptwriter. Your primary task is to convert the following news articles into a natural-sounding, two-person dialogue script.
+    prompt: `You are an expert multilingual podcast scriptwriter. Your primary task is to convert the following news article summaries into a natural-sounding, two-person dialogue script.
 
 **CRUCIAL INSTRUCTION: LANGUAGE DETECTION & ADHERENCE**
-First, meticulously analyze the provided "News Articles to Convert" to determine its primary language (e.g., English, Hindi, etc.).
-You **MUST** write the entire dialogue script in that same detected language. This is a non-negotiable rule.
+First, meticulously analyze the provided "News Article Summaries" to determine its primary language (e.g., English, Hindi, etc.).
+You **MUST** write the entire dialogue script in that same detected language.
 
-The dialogue should be between "Speaker1" (a knowledgeable and slightly formal expert) and "Speaker2" (an inquisitive and friendly learner). Speaker1 presents the key information from an article, and Speaker2 asks clarifying questions or makes comments to guide the conversation and make it more engaging.
+The dialogue should be between "Speaker1" (a knowledgeable and slightly formal expert) and "Speaker2" (an inquisitive and friendly learner). Speaker1 presents the key information from an article, and Speaker2 asks clarifying questions or makes comments to guide the conversation.
 
 **CRITICAL FORMATTING RULE:** The output MUST be a script formatted *exactly* like this, with each line starting with "Speaker1:" or "Speaker2:".
 Speaker1: [First line of dialogue in detected language]
 Speaker2: [Second line of dialogue in detected language]
 ...and so on.
 
-Do NOT add any other text, introductions, summaries, or explanations. The entire output must be ONLY the dialogue script.
+Do NOT add any other text, introductions, or explanations. The entire output must be ONLY the dialogue script.
 
-News Articles to Convert:
+News Article Summaries:
 ---
 {{{articleSnippets}}}
 ---
@@ -94,17 +93,16 @@ News Articles to Convert:
 Please provide the dialogue script below in the detected language.`
 });
 
-
+// This flow now expects articles that have already been summarized.
 const generatePodcastFromArticlesFlow = ai.defineFlow({
-  name: 'generatePodcastFromArticlesFlow',
-  inputSchema: GeneratePodcastFromArticlesInputSchema,
+  name: 'generatePodcastScriptAndAudioFlow', // Renamed for clarity
+  inputSchema: z.object({ articles: z.array(z.any()) }),
   outputSchema: GeneratePodcastFromArticlesOutputSchema,
 }, async ({ articles }) => {
 
-  // Step 1: Generate the podcast script using an integrated prompt.
-  console.log('[AI Flow - Podcast] Generating dialogue script...');
+  // Step 1: Generate the podcast script using the high-quality summaries.
+  console.log('[AI Flow - Podcast] Generating dialogue script from summaries...');
   
-  // Simplify the content sent to the AI to be more robust.
   const articleSnippets = articles.map(article => {
     return `Title: ${article.title}\nSummary: ${article.summary}`;
   }).join('\n\n---\n\n');
@@ -119,7 +117,6 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
      throw new Error("The AI model returned no text, so a script cannot be created.");
   }
 
-  // More robust cleaning: trim each line and ensure it starts with the correct speaker tag.
   let script = text
     .split('\n')
     .map(line => line.trim())
@@ -131,15 +128,13 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
      throw new Error("The AI failed to generate a valid script from the provided articles. The content may be too complex or short.");
   }
 
-  // CRITICAL FIX: Truncate script if it's too long to prevent TTS API from throwing a 500 error.
   if (script.length > 4000) {
     script = script.substring(0, 4000);
-    // Ensure we don't cut off a line mid-sentence.
     const lastLineEnd = script.lastIndexOf('\n');
     if (lastLineEnd > 0) {
         script = script.substring(0, lastLineEnd);
     }
-    console.log('[AI Flow - Podcast] Script was truncated to prevent TTS failure.');
+    console.warn('[AI Flow - Podcast] Script was truncated to prevent TTS failure.');
   }
   
   console.log('[AI Flow - Podcast] Dialogue script generated successfully.');
@@ -153,8 +148,8 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
         speechConfig: {
           multiSpeakerVoiceConfig: {
             speakerVoiceConfigs: [
-              { speaker: 'Speaker1', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Algenib' } } }, // Male Expert
-              { speaker: 'Speaker2', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Achernar' } } }, // Female Learner
+              { speaker: 'Speaker1', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Algenib' } } },
+              { speaker: 'Speaker2', voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Achernar' } } },
             ],
           },
         },
