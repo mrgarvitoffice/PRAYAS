@@ -8,28 +8,42 @@ const API_BASE_URL = 'https://newsdata.io/api/1/news';
 /**
  * Fetches news articles from the NewsData.io API.
  * @param query The search query for articles.
+ * @param country The country to fetch news from.
  * @returns A promise that resolves to the API response.
  */
 export async function fetchNews(
-  query: string = 'top'
+  query: string = 'top',
+  country: string = 'in' // Default to India
 ): Promise<NewsDataResponse> {
   const apiKey = process.env.NEWSDATA_API_KEY;
   if (!apiKey) {
     throw new Error('NEWSDATA_API_KEY is not set in environment variables.');
   }
 
-  const params = new URLSearchParams({
+  const params: Record<string, string> = {
     apikey: apiKey,
-    q: query,
     language: 'en',
-  });
+  };
 
-  const url = `${API_BASE_URL}?${params.toString()}`;
+  if (query && query.toLowerCase() !== 'all') {
+    params.category = query.toLowerCase();
+  } else {
+    params.q = 'top';
+  }
+  
+  if (country) {
+    params.country = country.toLowerCase();
+  }
+
+
+  const url = `${API_BASE_URL}?${new URLSearchParams(params).toString()}`;
 
   try {
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`API request failed with status ${response.status}`);
+        const errorBody = await response.text();
+        console.error('API Error Response:', errorBody);
+        throw new Error(`API request failed with status ${response.status}`);
     }
     const data: NewsDataResponse = await response.json();
     return data;

@@ -16,7 +16,8 @@ import { translateAndSummarizeArticleHindi } from './translate-and-summarize-art
 import type { Article, NewsDataArticle } from '@/lib/types';
 
 const FetchAndProcessNewsInputSchema = z.object({
-  query: z.string().describe('The search query for news articles.'),
+  category: z.string().describe('The news category to fetch.'),
+  country: z.string().describe('The country code (e.g., "in", "us").'),
 });
 export type FetchAndProcessNewsInput = z.infer<
   typeof FetchAndProcessNewsInputSchema
@@ -88,7 +89,7 @@ async function processArticle(
       city: null,
       category: article.category[0] || 'General',
       media: {
-        image: `https://picsum.photos/600/400?random=${article.article_id}`,
+        image: article.image_url || `https://picsum.photos/600/400?random=${article.article_id}`,
       },
       rank_score: 90, // Placeholder
     };
@@ -104,9 +105,9 @@ const fetchAndProcessNewsFlow = ai.defineFlow(
     inputSchema: FetchAndProcessNewsInputSchema,
     outputSchema: FetchAndProcessNewsOutputSchema,
   },
-  async ({ query }) => {
-    const newsResponse = await fetchNews(query);
-    const articles = newsResponse.results.slice(0, 11); // Limit to 11 articles
+  async ({ category, country }) => {
+    const newsResponse = await fetchNews(category, country);
+    const articles = newsResponse.results.slice(0, 11);
 
     const processingPromises = articles.map(processArticle);
     const processedArticles = await Promise.all(processingPromises);

@@ -65,13 +65,12 @@ export function PrayasTerminal() {
   const states = useMemo(() => Object.keys(locationData[pendingRegion] ? locationData[pendingRegion].states : {}), [pendingRegion]);
   const cities = useMemo(() => (pendingRegion === 'India' && pendingState && locationData.India.states[pendingState]) ? locationData.India.states[pendingState] : [], [pendingRegion, pendingState]);
   
-  const loadNews = useCallback(async () => {
+  const loadNews = useCallback(async (category: string, region: string) => {
     setIsLoading(true);
     try {
-      // For now, we fetch a general query. This can be expanded.
-      const fetchedArticles = await fetchAndProcessNews({ query: 'top' });
+      const countryCode = region === 'World' ? 'us' : 'in'; // Simplified logic
+      const fetchedArticles = await fetchAndProcessNews({ category, country: countryCode });
       setArticles(fetchedArticles);
-      setFilteredArticles(fetchedArticles);
     } catch (error) {
       console.error('Failed to fetch news:', error);
       toast({
@@ -81,21 +80,22 @@ export function PrayasTerminal() {
       });
       // Fallback to mock data on error
       setArticles(allArticles);
-      setFilteredArticles(allArticles);
     } finally {
       setIsLoading(false);
     }
   }, [toast]);
 
   useEffect(() => {
-    loadNews();
-  }, [loadNews]);
+    // Initial load
+    loadNews(activeCategory, activeRegion);
+  }, []);
 
   const applyFilters = () => {
     setActiveRegion(pendingRegion);
     setActiveState(pendingState);
     setActiveCity(pendingCity);
     setActiveCategory(pendingCategory);
+    loadNews(pendingCategory, pendingRegion);
   };
   
   useEffect(() => {
@@ -103,19 +103,17 @@ export function PrayasTerminal() {
 
     // The filtering logic below is kept for when the API provides this data
     if (activeRegion !== 'World') {
-      result = result.filter(a => a.country === 'India');
       if (activeState && activeState !== 'All India') {
         result = result.filter(a => a.state === activeState);
         if (activeCity && activeCity !== 'All') {
           result = result.filter(a => a.city === activeCity);
         }
       }
-    } else {
-      result = result.filter(a => a.country !== 'India');
-    }
+    } 
 
+    // Category is now filtered at the API level, so we just display what we get.
+    // However, if we fall back to mock data, this client-side filter is useful.
     if (activeCategory && activeCategory !== 'All') {
-      // newsdata.io returns an array of categories. We check if our selected one is present.
       result = result.filter(a => a.category.toLowerCase().includes(activeCategory.toLowerCase()));
     }
 
@@ -225,8 +223,10 @@ export function PrayasTerminal() {
           <header className="sticky top-0 z-40 w-full border-b bg-background">
             <div className="container mx-auto flex h-16 items-center justify-between px-4">
               <div className="flex items-center gap-2">
-                <SidebarTrigger>
-                  <Menu/>
+                <SidebarTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    <Menu/>
+                  </Button>
                 </SidebarTrigger>
                 <Logo />
               </div>
