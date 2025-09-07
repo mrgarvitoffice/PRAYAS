@@ -40,7 +40,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { translateAndSummarizeArticleHindi } from '@/ai/flows/translate-and-summarize-article-hindi';
-import { generatePodcastFromArticles } from '@/ai/flows/generate-podcast-from-articles';
+import { generateDiscussionAudio } from '@/ai/flows/generate-discussion-audio';
 import { useAudioPlayer } from '@/context/audio-player-context';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -86,12 +86,16 @@ const NewsApp = () => {
 
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
   const [isGeneratingPodcast, setIsGeneratingPodcast] = useState(false);
-  const [generatedPodcastAudio, setGeneratedPodcastAudio] = useState<string | null>(null);
+  const [generatedPodcastScript, setGeneratedPodcastScript] = useState<string | null>(null);
 
   const [isSpeakingHeadlines, setIsSpeakingHeadlines] = useState(false);
   const [isPausedHeadlines, setIsPausedHeadlines] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const utteranceRef = React.useRef<SpeechSynthesisUtterance | null>(null);
+  const [isSpeakingPodcast, setIsSpeakingPodcast] = useState(false);
+  const [isPausedPodcast, setIsPausedPodcast] = useState(false);
+  const podcastUtteranceRef = React.useRef<SpeechSynthesisUtterance[]>([]);
+
 
   const [processingArticleIds, setProcessingArticleIds] = useState<Set<string>>(new Set());
   
@@ -243,7 +247,7 @@ const NewsApp = () => {
   
   const handleCreatePodcast = () => {
     if (news.length > 0) {
-      setGeneratedPodcastAudio(null);
+      setGeneratedPodcastScript(null);
       setIsPodcastModalOpen(true);
     } else {
        toast({
@@ -257,15 +261,15 @@ const NewsApp = () => {
   const handleGeneratePodcast = async () => {
     if (news.length === 0) return;
     setIsGeneratingPodcast(true);
-    setGeneratedPodcastAudio(null);
+    setGeneratedPodcastScript(null);
     try {
-      toast({ title: 'Generating your discussion...', description: 'This may take a minute or two. Preparing articles...' });
+      toast({ title: 'Generating your discussion script...', description: 'Preparing articles and writing dialogue...' });
       
-      const articlesForPodcast = news.slice(0, 10);
+      const articlesForPodcast = news.slice(0, 10).map(a => ({ title: a.title, content: a.rawContent }));
       
-      const result = await generatePodcastFromArticles({ articles: articlesForPodcast });
-      setGeneratedPodcastAudio(result.audioDataUri);
-      toast({ title: 'Discussion generated successfully!', description: 'You can now play or download it.' });
+      const result = await generateDiscussionAudio({ articles: articlesForPodcast, language: filters.language });
+      setGeneratedPodcastScript(result.discussionScript);
+      toast({ title: 'Discussion script generated!', description: 'You can now play it.' });
     } catch (e) {
       console.error("Error generating discussion", e);
       const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
@@ -355,10 +359,74 @@ const NewsApp = () => {
         setIsPausedHeadlines(false);
         utteranceRef.current = null;
     }
-  }
+  };
   
+    const playPodcastScript = useCallback(() => {
+    if (!generatedPodcastScript) return;
+
+    if (isSpeakingPodcast && !isPausedPodcast) {
+      window.speechSynthesis.pause();
+      setIsPausedPodcast(true);
+      return;
+    }
+
+    if (isPausedPodcast) {
+      window.speechSynthesis.resume();
+      setIsPausedPodcast(false);
+      return;
+    }
+
+    window.speechSynthesis.cancel(); // Clear any previous speech
+
+    const langCode = filters.language === 'hi' ? 'hi-IN' : 'en-US';
+    const allVoices = window.speechSynthesis.getVoices().filter(v => v.lang === langCode);
+    const voice1 = allVoices.find(v => v.name.includes('Google')) || allVoices[0];
+    const voice2 = allVoices.find(v => v.name.includes('Natural')) || allVoices[1] || allVoices[0];
+
+    const lines = generatedPodcastScript.split('\n').filter(line => line.startsWith('Speaker1:') || line.startsWith('Speaker2:'));
+    const utterances = lines.map((line, index) => {
+      const isSpeaker1 = line.startsWith('Speaker1:');
+      const text = line.replace(/Speaker[12]:\s*/, '');
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.voice = isSpeaker1 ? voice1 : voice2;
+      utterance.lang = langCode;
+      
+      utterance.onend = () => {
+        if (index === utterances.length - 1) {
+          setIsSpeakingPodcast(false);
+          setIsPausedPodcast(false);
+          podcastUtteranceRef.current = [];
+        }
+      };
+      
+      utterance.onerror = (event) => {
+        console.error('Podcast SpeechSynthesisUtterance.onerror', event);
+        toast({
+          variant: "destructive",
+          title: "Podcast Speech Error",
+          description: `Could not read the discussion script.`,
+        });
+        setIsSpeakingPodcast(false);
+        setIsPausedPodcast(false);
+      };
+      return utterance;
+    });
+
+    podcastUtteranceRef.current = utterances;
+    setIsSpeakingPodcast(true);
+    setIsPausedPodcast(false);
+    utterances.forEach(u => window.speechSynthesis.speak(u));
+  }, [generatedPodcastScript, filters.language, voices, isSpeakingPodcast, isPausedPodcast, toast]);
+
+  const stopPodcastScript = useCallback(() => {
+    window.speechSynthesis.cancel();
+    setIsSpeakingPodcast(false);
+    setIsPausedPodcast(false);
+    podcastUtteranceRef.current = [];
+  }, []);
+
   useEffect(() => {
-    // Cleanup speech synthesis on component unmount or filter change
+    // Cleanup speech synthesis on component unmount
     return () => {
       window.speechSynthesis.cancel();
     };
@@ -624,14 +692,14 @@ const NewsApp = () => {
         </div>
         
          {/* Podcast Modal */}
-        <Dialog open={isPodcastModalOpen} onOpenChange={setIsPodcastModalOpen}>
+        <Dialog open={isPodcastModalOpen} onOpenChange={(isOpen) => { setIsPodcastModalOpen(isOpen); if (!isOpen) stopPodcastScript(); }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Generate Your Discussion Episode</DialogTitle>
               <DialogDescription>
-                {generatedPodcastAudio
-                  ? 'Your discussion is ready! You can now play it below or download it.'
-                  : `A discussion will be generated from the top ${Math.min(10, news.length)} available articles.`}
+                {generatedPodcastScript
+                  ? 'Your discussion script is ready! You can now listen to it below.'
+                  : `A discussion script will be generated from the top ${Math.min(10, news.length)} available articles.`}
               </DialogDescription>
             </DialogHeader>
 
@@ -640,22 +708,23 @@ const NewsApp = () => {
                 <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
                 <p className="mt-4 text-slate-500">Generating your AI discussion, please wait...</p>
               </div>
-            ) : generatedPodcastAudio ? (
+            ) : generatedPodcastScript ? (
               <div className="my-4 space-y-4">
-                <audio controls src={generatedPodcastAudio} className="w-full">
-                  Your browser does not support the audio element.
-                </audio>
-                <a
-                  href={generatedPodcastAudio}
-                  download="prayas-discussion.wav"
-                  className={cn(
-                    'w-full',
-                    buttonVariants({ variant: 'outline' })
+                <div className="flex items-center justify-center gap-4">
+                  <Button onClick={playPodcastScript} variant="outline" size="lg">
+                    {isSpeakingPodcast && !isPausedPodcast ? <Pause className="mr-2 h-5 w-5" /> : <Play className="mr-2 h-5 w-5" />}
+                    {isSpeakingPodcast && !isPausedPodcast ? 'Pause' : isPausedPodcast ? 'Resume' : 'Play Discussion'}
+                  </Button>
+                  {(isSpeakingPodcast || isPausedPodcast) && (
+                    <Button onClick={stopPodcastScript} variant="destructive" size="lg">
+                       <StopCircle className="mr-2 h-5 w-5" />
+                       Stop
+                    </Button>
                   )}
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  Download Discussion
-                </a>
+                </div>
+                 <div className="max-h-60 overflow-y-auto p-3 my-4 border rounded-md bg-slate-50 dark:bg-slate-800">
+                    <p className="text-sm whitespace-pre-wrap font-mono text-slate-700 dark:text-slate-300">{generatedPodcastScript}</p>
+                 </div>
               </div>
             ) : (
               <>
@@ -664,7 +733,7 @@ const NewsApp = () => {
                     {news.slice(0, 10).map((article, index) => (
                       <li key={article.id} className="flex items-center justify-between p-2 rounded-md bg-muted">
                         <span className="truncate pr-4 text-sm">
-                          {index + 1}. {article.title}
+                          {index + 1}. {filters.language === 'hi' && article.titleHi ? article.titleHi : article.title}
                         </span>
                       </li>
                     ))}
@@ -674,13 +743,13 @@ const NewsApp = () => {
             )}
 
             <DialogFooter className='mt-4'>
-              <Button variant="outline" onClick={() => { setIsPodcastModalOpen(false); setGeneratedPodcastAudio(null); }}>
-                {generatedPodcastAudio ? 'Close' : 'Cancel'}
+              <Button variant="outline" onClick={() => { setIsPodcastModalOpen(false); setGeneratedPodcastScript(null); stopPodcastScript(); }}>
+                {generatedPodcastScript ? 'Close' : 'Cancel'}
               </Button>
-              {!generatedPodcastAudio && (
+              {!generatedPodcastScript && (
                 <Button onClick={handleGeneratePodcast} disabled={isGeneratingPodcast}>
                   {isGeneratingPodcast ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rss className="mr-2 h-4 w-4" />}
-                  Generate Discussion
+                  Generate Script
                 </Button>
               )}
             </DialogFooter>

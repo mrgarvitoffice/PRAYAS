@@ -3,7 +3,6 @@
 
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import type { Article, Language } from '@/lib/types';
-import { generateSingleSpeakerAudio } from '@/ai/flows/generate-single-speaker-audio';
 import { summarizeArticle } from '@/ai/flows/summarize-article';
 import { translateAndSummarizeArticleHindi } from '@/ai/flows/translate-and-summarize-article-hindi';
 import { useToast } from '@/hooks/use-toast';
@@ -32,11 +31,17 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const { toast } = useToast();
   
   const onArticleUpdateRef = useRef<(article: Article) => void>();
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+
 
   const stop = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = '';
+    }
+    if (utteranceRef.current) {
+      window.speechSynthesis.cancel();
+      utteranceRef.current = null;
     }
     setIsPlaying(false);
     setProgress(0);
@@ -44,12 +49,13 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   const togglePlayPause = useCallback(() => {
-    if (audioRef.current?.src) {
+    if (utteranceRef.current) {
       if (isPlaying) {
-        audioRef.current.pause();
+        window.speechSynthesis.pause();
       } else {
-        audioRef.current.play();
+        window.speechSynthesis.resume();
       }
+      setIsPlaying(!isPlaying);
     }
   }, [isPlaying]);
 
@@ -76,6 +82,11 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
           updatedArticle.summaryHi = hindiSummary.summaryPoints.join(' ');
           updatedArticle.importantPointsHi = hindiSummary.summaryPoints;
         }
+         if (onArticleUpdateRef.current) {
+            onArticleUpdateRef.current(updatedArticle);
+        }
+        return updatedArticle;
+
       } catch (e) {
           console.error("Error during summarization:", e);
           toast({ variant: 'destructive', title: 'Summarization Failed', description: e instanceof Error ? e.message : 'Could not process article.' });
@@ -83,44 +94,13 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     }
     
-    const contentToRead = language === 'hi'
-        ? `Title: ${updatedArticle.titleHi}. Summary: ${updatedArticle.importantPointsHi.join('. ')}`
-        : `Title: ${updatedArticle.title}. Summary: ${updatedArticle.importantPoints.join('. ')}`;
-
-    if (!contentToRead.trim()) {
-        toast({ variant: 'destructive', title: 'Audio Generation Failed', description: 'Cannot generate audio from empty content.'});
-        return null;
-    }
-    
-    try {
-        toast({ title: "Generating audio...", description: "This might take a moment." });
-        const result = await generateSingleSpeakerAudio({ content: contentToRead, language });
-        if (language === 'en') {
-          updatedArticle.audioDataUriEn = result.audioDataUri;
-        } else {
-          updatedArticle.audioDataUriHi = result.audioDataUri;
-        }
-    } catch (e) {
-        console.error("Error during audio generation:", e);
-        let errorMessage = e instanceof Error ? e.message : 'Could not generate audio.';
-        if (errorMessage.includes('429')) {
-          errorMessage = 'You have exceeded the daily limit for audio generation. Please try again tomorrow.';
-        }
-        toast({ variant: 'destructive', title: 'Audio Generation Failed', description: errorMessage});
-        return null;
-    }
-
-    if (onArticleUpdateRef.current) {
-        onArticleUpdateRef.current(updatedArticle);
-    }
-
-    return updatedArticle;
+    return updatedArticle; // Return article if no processing was needed
   }, [toast]);
   
   const playArticle = useCallback(async (articleToPlay: Article, language: Language) => {
     if (isLoading) return;
     
-    if (article?.id === articleToPlay.id && isPlaying) {
+    if (article?.id === articleToPlay.id) {
         togglePlayPause();
         return;
     }
@@ -130,30 +110,43 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setArticle(articleToPlay);
 
     try {
-        let articleWithAudio = { ...articleToPlay };
-        const audioUri = language === 'en' ? articleToPlay.audioDataUriEn : articleToPlay.audioDataUriHi;
+        let articleWithContent = await processAndCacheArticle(articleToPlay, language);
         
-        if (!audioUri) {
-            const processed = await processAndCacheArticle(articleToPlay, language);
-            if (processed) {
-              articleWithAudio = processed;
-            } else {
-              // Processing failed, stop everything.
-              stop();
-              return;
-            }
+        if (!articleWithContent) {
+            stop();
+            return;
         }
         
-        setArticle(articleWithAudio);
-        
-        const finalAudioUri = language === 'en' ? articleWithAudio.audioDataUriEn : articleWithAudio.audioDataUriHi;
+        const title = language === 'hi' ? articleWithContent.titleHi : articleWithContent.title;
+        const points = language === 'hi' ? articleWithContent.importantPointsHi : articleWithContent.importantPoints;
+        const contentToRead = `Title: ${title}. Summary: ${points.join('. ')}`;
 
-        if (audioRef.current && finalAudioUri) {
-            audioRef.current.src = finalAudioUri;
-            await audioRef.current.play();
-        } else {
-            throw new Error("Audio data is not available even after processing.");
+        utteranceRef.current = new SpeechSynthesisUtterance(contentToRead);
+        const utterance = utteranceRef.current;
+        
+        const langCode = language === 'hi' ? 'hi-IN' : 'en-US';
+        utterance.lang = langCode;
+
+        const voices = window.speechSynthesis.getVoices();
+        const bestVoice = voices.find(v => v.lang === langCode && v.name.includes('Google')) ||
+                          voices.find(v => v.lang === langCode && v.name.includes('Natural')) ||
+                          voices.find(v => v.lang === langCode && v.localService) ||
+                          voices.find(v => v.lang === langCode);
+
+        if (bestVoice) {
+            utterance.voice = bestVoice;
         }
+
+        utterance.onstart = () => setIsPlaying(true);
+        utterance.onend = stop;
+        utterance.onerror = (e) => {
+            console.error("Speech synthesis error", e);
+            toast({ variant: 'destructive', title: 'Playback Error', description: 'Could not play audio using browser TTS.' });
+            stop();
+        };
+
+        window.speechSynthesis.speak(utterance);
+
     } catch (error) {
       console.error('Playback failed:', error);
       toast({ variant: 'destructive', title: 'Playback Error', description: error instanceof Error ? error.message : 'Could not play audio.' });
@@ -161,46 +154,12 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, article, processAndCacheArticle, stop, togglePlayPause, isPlaying, toast]);
+  }, [isLoading, article, processAndCacheArticle, stop, togglePlayPause, toast]);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined' && !audioRef.current) {
-      audioRef.current = new Audio();
-      const audio = audioRef.current;
 
-      const handleTimeUpdate = () => {
-        if (audio.duration) {
-          setProgress((audio.currentTime / audio.duration) * 100);
-        }
-      };
-      const handleEnded = () => {
-        setIsPlaying(false);
-        stop();
-      };
-      const handlePlay = () => setIsPlaying(true);
-      const handlePause = () => setIsPlaying(false);
-
-      audio.addEventListener('timeupdate', handleTimeUpdate);
-      audio.addEventListener('ended', handleEnded);
-      audio.addEventListener('play', handlePlay);
-      audio.addEventListener('pause', handlePause);
-
-      return () => {
-        audio.removeEventListener('timeupdate', handleTimeUpdate);
-        audio.removeEventListener('ended', handleEnded);
-        audio.removeEventListener('play', handlePlay);
-        audio.removeEventListener('pause', handlePause);
-        audio.pause();
-      };
-    }
-  }, [stop]);
-  
+  // Placeholder for seek as Web Speech API doesn't support it well.
   const seek = useCallback((newProgress: number) => {
-    if (audioRef.current && audioRef.current.duration) {
-        const newTime = (newProgress / 100) * audioRef.current.duration;
-        audioRef.current.currentTime = newTime;
-        setProgress(newProgress);
-    }
+    console.warn("Seek is not supported for browser-based text-to-speech.");
   }, []);
 
   const value: AudioPlayerContextType = {
@@ -208,7 +167,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     article,
     isPlaying,
     isLoading,
-    progress,
+    progress: 0, // Progress is not tracked for browser TTS
     playArticle,
     togglePlayPause,
     stop,
