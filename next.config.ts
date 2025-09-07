@@ -88,6 +88,12 @@ const nextConfig: NextConfig = {
         hostname: 'media.tegna-media.com',
         port: '',
         pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'platform.mmafighting.com',
+        port: '',
+        pathname: '/**',
       }
     ],
   },
