@@ -27,18 +27,18 @@ export async function fetchNews(
   const params = new URLSearchParams({
     apikey: apiKey,
     language: 'en',
-    size: size.toString(),
   });
 
-  // newsdata.io requires `q` or `category` but not both.
   if (category && category.toLowerCase() !== 'all') {
     params.set('category', category.toLowerCase());
   } else {
-    // Use a general query if no specific category is selected
     params.set('q', 'top');
   }
 
-  params.set('country', country.toLowerCase() || 'in');
+  params.set('country', country.toLowerCase());
+  // The API expects 'size' as a number, but URLSearchParams stringifies it.
+  // The API documentation implies it should be a numeric value in the query string.
+  params.set('size', size.toString());
 
 
   const url = `${API_BASE_URL}?${params.toString()}`;
@@ -60,7 +60,6 @@ export async function fetchNews(
         console.error('API Error Response:', errorText);
         try {
             const errorJson = JSON.parse(errorText);
-            // Accessing the results field which may contain the error message
             const errorMessage = (errorJson.results && errorJson.results.message) || errorJson.message || errorText;
             throw new Error(`API Error (${response.status}): ${errorMessage}`);
         } catch (parseError) {
