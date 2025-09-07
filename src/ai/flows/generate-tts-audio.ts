@@ -70,7 +70,7 @@ const generateTtsAudioFlow = ai.defineFlow({
   console.log(`[AI Flow - TTS] Generating audio with voices: ${voice1}, ${voice2}`);
 
   const { media } = await ai.generate({
-      model: googleAI.model('gemini-2.5-flash-preview-tts'),
+      model: googleAI.model('gemini-2.5-pro-preview-tts'),
       config: {
         responseModalities: ['AUDIO'],
         speechConfig: {
