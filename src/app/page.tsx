@@ -385,7 +385,7 @@ const NewsApp = () => {
       return;
     }
 
-    const langCode = filters.language === 'hi' ? 'hi-IN' : 'en-US';
+    const langCode = 'hi-IN'; // Always use Hindi voice
     const bestVoice = voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('google')) ||
                       voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('natural')) ||
                       voices.find(v => v.lang === langCode && v.localService) ||
