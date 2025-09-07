@@ -93,7 +93,6 @@ async function processArticle(
       city: null,
       category: article.category[0] || 'General',
       media: {
-        // Always use a placeholder to avoid next/image domain errors
         image: `https://picsum.photos/600/400?random=${article.article_id}`,
       },
       rank_score: 90, // Placeholder

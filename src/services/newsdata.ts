@@ -26,15 +26,19 @@ export async function fetchNews(
     apikey: apiKey,
     language: 'en',
     size: size.toString(),
-    country: country.toLowerCase(),
   };
-  
+
+  if (country) {
+    params.country = country.toLowerCase();
+  }
+
   if (category && category.toLowerCase() !== 'all') {
     params.category = category.toLowerCase();
   } else {
     // newsdata.io requires a query `q` if category is not specified alongside country
     params.q = 'top news';
   }
+
 
   const url = `${API_BASE_URL}?${new URLSearchParams(params).toString()}`;
 
