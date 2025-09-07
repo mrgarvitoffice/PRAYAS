@@ -14,8 +14,8 @@ interface AudioPlayerContextType {
   isPlaying: boolean;
   isLoading: boolean;
   progress: number;
-  playArticle: (article: Article, language: Language, onArticleProcessed: (article: Article) => void) => void;
-  playPlaylist: (articles: Article[], language: Language, onArticleProcessed: (article: Article) => void) => void;
+  playArticle: (article: Article, language: Language) => void;
+  playPlaylist: (articles: Article[], language: Language) => void;
   togglePlayPause: () => void;
   stop: () => void;
   seek: (progress: number) => void;
@@ -36,13 +36,16 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [playlist, setPlaylist] = useState<Article[]>([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [playlistLanguage, setPlaylistLanguage] = useState<Language>('en');
-  const onPlaylistArticleProcessed = useRef<(article: Article) => void>(() => {});
 
+  const onArticleProcessed = (article: Article) => {
+    updateArticleInList(article);
+  };
+  
   const playNextInPlaylist = useCallback(() => {
     if (currentTrackIndex < playlist.length - 1) {
       const nextIndex = currentTrackIndex + 1;
       setCurrentTrackIndex(nextIndex);
-      playArticle(playlist[nextIndex], playlistLanguage, onPlaylistArticleProcessed.current);
+      playArticle(playlist[nextIndex], playlistLanguage);
     } else {
       // End of playlist
       stop();
@@ -91,7 +94,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [processedArticle]);
 
-  const playArticle = useCallback(async (article: Article, language: Language, onArticleProcessed: (article: Article) => void) => {
+  const playArticle = useCallback(async (article: Article, language: Language) => {
     if (audioRef.current) {
       if (currentArticle?.id === article.id && playlist.length === 0) { // Don't toggle for playlist
         if (isPlaying) {
@@ -180,13 +183,12 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [toast, currentArticle, isPlaying, playlist.length]);
 
-  const playPlaylist = (articles: Article[], language: Language, onArticleProcessed: (article: Article) => void) => {
+  const playPlaylist = (articles: Article[], language: Language) => {
     setPlaylist(articles);
     setCurrentTrackIndex(0);
     setPlaylistLanguage(language);
-    onPlaylistArticleProcessed.current = onArticleProcessed;
     if (articles.length > 0) {
-      playArticle(articles[0], language, onArticleProcessed);
+      playArticle(articles[0], language);
     }
   };
 

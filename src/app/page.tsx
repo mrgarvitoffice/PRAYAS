@@ -208,7 +208,7 @@ const NewsApp = () => {
   
   const handleListenToAll = () => {
     if (news.length > 0) {
-      audioPlayer.playPlaylist(news, filters.language, handleArticleUpdate);
+      audioPlayer.playPlaylist(news, filters.language);
       toast({
         title: "Starting Playlist",
         description: `Playing all ${news.length} articles in the current view.`,
@@ -486,7 +486,7 @@ const NewsApp = () => {
                     </div>
                     <div className="bg-slate-50 dark:bg-slate-800 p-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700/50">
                       <div className="flex items-center gap-2">
-                         <button onClick={() => audioPlayer.playArticle(article, filters.language, handleArticleUpdate)} disabled={isCurrentlyLoading} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors" aria-label="Listen to Article">
+                         <button onClick={() => audioPlayer.playArticle(article, filters.language)} disabled={isCurrentlyLoading} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors" aria-label="Listen to Article">
                             {isCurrentlyLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Headphones className="w-5 h-5"/>}
                          </button>
                          {needsProcessing && (

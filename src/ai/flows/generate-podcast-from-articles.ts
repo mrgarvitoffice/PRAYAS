@@ -58,7 +58,14 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
 }, async ({ articles, language }) => {
   
   // Step 1: Generate the podcast script using a dedicated flow
-  const { script } = await generatePodcastScript({ articles, language });
+  let script;
+  try {
+    const scriptResult = await generatePodcastScript({ articles, language });
+    script = scriptResult.script;
+  } catch (e) {
+    console.error("Podcast script generation failed", e);
+    throw new Error(`Failed to generate podcast script: ${e instanceof Error ? e.message : 'Unknown error'}`);
+  }
   
   // Prevent calling TTS with an empty script
   if (!script) {
