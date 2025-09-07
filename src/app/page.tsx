@@ -235,7 +235,7 @@ const NewsApp = () => {
   const visibleNews = useMemo(() => news.slice(0, visibleArticlesCount), [news, visibleArticlesCount]);
   
   const handleCreatePodcast = () => {
-    if (visibleNews.length > 0) {
+    if (news.length > 0) {
       setGeneratedPodcastAudio(null);
       setIsPodcastModalOpen(true);
     } else {
@@ -248,29 +248,39 @@ const NewsApp = () => {
   };
 
   const handleGeneratePodcast = async () => {
-    if (visibleNews.length === 0) return;
+    if (news.length === 0) return;
     setIsGeneratingPodcast(true);
     setGeneratedPodcastAudio(null);
     try {
-      toast({ title: 'Generating your podcast...', description: 'This may take a minute or two.' });
+      toast({ title: 'Generating your podcast...', description: 'This may take a minute or two. Using all available articles.' });
       
       const articlesForPodcast = await Promise.all(
-        visibleNews.map(async (article) => {
+        news.map(async (article) => {
           if ((podcastLanguage === 'hi' || podcastLanguage === 'bilingual') && !article.titleHi) {
-             const hindiSummary = await translateAndSummarizeArticleHindi({
-                articleTitle: article.title,
-                articleContent: article.rawContent,
-              });
-              const processedArticle = {
-                ...article,
-                titleHi: hindiSummary.translatedTitle,
-                summaryHi: hindiSummary.summaryPoints.join(' '),
-                importantPointsHi: hindiSummary.summaryPoints,
-              };
-              handleArticleUpdate(processedArticle);
-              return processedArticle;
+             // This article needs translation before being added to the podcast
+             setProcessingArticleIds(prev => new Set(prev).add(article.id));
+             try {
+                const hindiSummary = await translateAndSummarizeArticleHindi({
+                    articleTitle: article.title,
+                    articleContent: article.rawContent,
+                  });
+                  const processedArticle = {
+                    ...article,
+                    titleHi: hindiSummary.translatedTitle,
+                    summaryHi: hindiSummary.summaryPoints.join(' '),
+                    importantPointsHi: hindiSummary.summaryPoints,
+                  };
+                  handleArticleUpdate(processedArticle); // Update the main state
+                  return processedArticle;
+             } finally {
+                setProcessingArticleIds(prev => {
+                    const newSet = new Set(prev);
+                    newSet.delete(article.id);
+                    return newSet;
+                });
+             }
           }
-          return article;
+          return article; // Return as is if no translation needed
         })
       );
       
@@ -399,7 +409,7 @@ const NewsApp = () => {
                     <StopCircle className="h-5 w-5" />
                   </Button>
                 )}
-              <Button variant="outline" onClick={handleCreatePodcast} disabled={visibleNews.length === 0}>
+              <Button variant="outline" onClick={handleCreatePodcast} disabled={news.length === 0}>
                 <Podcast className="mr-2 h-4 w-4" />
                 Create Podcast
               </Button>
@@ -642,7 +652,7 @@ const NewsApp = () => {
               <DialogDescription>
                 {generatedPodcastAudio
                   ? 'Your podcast is ready! You can now play it below or download it.'
-                  : `A podcast will be generated from the ${visibleNews.length} currently visible articles. Choose a language for the audio.`}
+                  : `A podcast will be generated from all ${news.length} available articles. Choose a language for the audio.`}
               </DialogDescription>
             </DialogHeader>
 
@@ -672,7 +682,7 @@ const NewsApp = () => {
               <>
                 <div className="max-h-60 overflow-y-auto p-1 my-4 border rounded-md">
                   <ul className="space-y-2">
-                    {visibleNews.map((article, index) => (
+                    {news.map((article, index) => (
                       <li key={article.id} className="flex items-center justify-between p-2 rounded-md bg-muted">
                         <span className="truncate pr-4 text-sm">
                           {index + 1}. {filters.language === 'hi' && article.titleHi ? article.titleHi : article.title}
