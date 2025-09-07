@@ -288,7 +288,7 @@ const NewsApp = () => {
       setIsPausedHeadlines(true);
       return;
     }
-    
+
     if (isPausedHeadlines) {
       window.speechSynthesis.resume();
       setIsPausedHeadlines(false);
@@ -302,13 +302,13 @@ const NewsApp = () => {
         return `${title}. ${summary}`;
       })
       .filter(Boolean)
-      .join('. ');
-      
+      .join('. Next. ');
+
     if (!textToSpeak) {
       toast({ title: 'No content to read', description: 'There are no articles with headlines or summaries to read out.' });
       return;
     }
-    
+
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
     utteranceRef.current = utterance;
 
