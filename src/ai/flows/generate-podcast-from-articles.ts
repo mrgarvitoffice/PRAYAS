@@ -2,7 +2,7 @@
 'use server';
 /**
  * @fileOverview This file defines a Genkit flow for generating a podcast episode from a list of news articles.
- * It orchestrates a two-step process: first generating a script, then generating audio.
+ * It orchestrates a two-step process: first generating a script, then generating audio, all within a single flow.
  *
  * It exports:
  * - `generatePodcastFromArticles`: The main function to generate the podcast.
@@ -13,7 +13,6 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import wav from 'wav';
-import { generatePodcastScript } from './generate-podcast-script';
 import type { Article } from '@/lib/types';
 
 const GeneratePodcastFromArticlesInputSchema = z.object({
@@ -63,19 +62,76 @@ async function toWav(
   });
 }
 
+// Prompt to generate the dialogue script.
+const dialoguePrompt = ai.definePrompt({
+    name: 'generatePodcastScriptForTtsPrompt',
+    model: 'googleai/gemini-2.5-flash-lite',
+    input: { schema: z.object({ articleSnippets: z.string() }) },
+    output: { format: 'text' },
+    prompt: `You are an expert multilingual podcast scriptwriter. Your primary task is to convert the following news articles into a natural-sounding, two-person dialogue script.
+
+**CRUCIAL INSTRUCTION: LANGUAGE DETECTION & ADHERENCE**
+First, meticulously analyze the provided "News Articles to Convert" to determine its primary language (e.g., English, Hindi, etc.).
+You **MUST** write the entire dialogue script in that same detected language. This is a non-negotiable rule.
+
+The dialogue should be between "Speaker1" (a knowledgeable and slightly formal expert) and "Speaker2" (an inquisitive and friendly learner). Speaker1 presents the key information from an article, and Speaker2 asks clarifying questions or makes comments to guide the conversation and make it more engaging.
+
+**CRITICAL FORMATTING RULE:** The output MUST be a script formatted *exactly* like this, with each line starting with "Speaker1:" or "Speaker2:".
+Speaker1: [First line of dialogue in detected language]
+Speaker2: [Second line of dialogue in detected language]
+...and so on.
+
+Do NOT add any other text, introductions, summaries, or explanations. The entire output must be ONLY the dialogue script.
+
+News Articles to Convert:
+---
+{{{articleSnippets}}}
+---
+
+Please provide the dialogue script below in the detected language.`
+});
+
+
 const generatePodcastFromArticlesFlow = ai.defineFlow({
   name: 'generatePodcastFromArticlesFlow',
   inputSchema: GeneratePodcastFromArticlesInputSchema,
   outputSchema: GeneratePodcastFromArticlesOutputSchema,
 }, async ({ articles }) => {
-  
-  // Step 1: Generate the podcast script using the dedicated, robust flow.
+
+  // Step 1: Generate the podcast script using an integrated prompt.
   console.log('[AI Flow - Podcast] Generating dialogue script...');
-  const { script } = await generatePodcastScript({ articles });
+
+  const getArticleContent = (article: Article) => {
+    const title = article.title;
+    const summary = article.summary;
+    return `Title: ${title}. Summary: ${summary}`;
+  };
+
+  const articleSnippets = articles.map(article => {
+    const source = article.source?.name || 'an unknown source';
+    const content = getArticleContent(article);
+    return `Source: ${source}\nContent: ${content}`;
+  }).join('\n\n---\n\n');
+
+  if (!articleSnippets.trim()) {
+    throw new Error("Cannot generate script from empty or invalid article content.");
+  }
+
+  const { text } = await dialoguePrompt({ articleSnippets });
+
+  if (!text) {
+     throw new Error("The AI model returned no text, so a script cannot be created.");
+  }
+
+  const script = text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.startsWith('Speaker1:') || line.startsWith('Speaker2:'))
+    .join('\n');
   
-  // This is a critical validation step. If the script is empty, we must stop.
   if (!script) {
-     throw new Error("The AI returned an empty or invalid script. This can happen with very short or complex content. Please try a different set of articles.");
+     console.error("AI generated text but it contained no valid dialogue lines. Raw output:", text);
+     throw new Error("The AI failed to generate a valid script from the provided articles. The content may be too complex or short.");
   }
   console.log('[AI Flow - Podcast] Dialogue script generated successfully.');
   
