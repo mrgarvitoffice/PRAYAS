@@ -58,7 +58,7 @@ const generatePodcastScriptFlow = ai.defineFlow({
   }).join('\n\n---\n\n');
 
   const { output } = await ai.generate({
-    model: 'googleai/gemini-2.5-flash-lite',
+    model: 'googleai/gemini-2.5-flash-preview-05-20',
     prompt: `You are a podcast script writer. Create a compelling podcast script from the following news articles.
 
     Instructions:

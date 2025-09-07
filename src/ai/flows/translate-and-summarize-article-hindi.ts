@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -38,6 +39,7 @@ const prompt = ai.definePrompt({
   output: {
     schema: TranslateAndSummarizeArticleHindiOutputSchema,
   },
+  model: 'googleai/gemini-2.5-flash-preview-05-20',
   prompt: `You are an expert translator and summarizer specializing in Hindi news for UPSC (Union Public Service Commission) preparation.
 
   Your task is to translate the given article title and content into Hindi, ensuring the translated content uses simplified vocabulary suitable for UPSC aspirants.
