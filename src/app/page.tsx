@@ -20,7 +20,6 @@ import {
   Download,
   Headphones,
   Info,
-  Library,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -147,7 +146,7 @@ const NewsApp = () => {
           );
       }
       
-      await processAndSetNews(processedArticles, currentFilters.language);
+      setNews(processedArticles); // Set news directly without translation
 
       if (processedArticles.length === 0) {
         setError('No news articles found for the selected filters.');
@@ -161,7 +160,7 @@ const NewsApp = () => {
     } finally {
       setLoading(false);
     }
-  }, [processAndSetNews]);
+  }, []);
 
   const handleFilterChange = useCallback((filterType: string, value: string) => {
     setFilters(prev => {
@@ -171,21 +170,23 @@ const NewsApp = () => {
         newFilters.city = '';
       } else if (filterType === 'state') {
         newFilters.city = '';
-      } else if (filterType === 'language') {
-         // Re-fetch and re-process when language changes
-         fetchNewsCallback(newFilters);
       }
+      // No automatic re-fetch on language change now, it's handled by the player
       return newFilters;
     });
-  }, [fetchNewsCallback]);
+  }, []);
   
   useEffect(() => {
     const handler = setTimeout(() => {
         fetchNewsCallback(filters);
     }, 500); // Debounce search input
     return () => clearTimeout(handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.search, filters.region, filters.state, filters.city, filters.category]);
+  }, [filters.search, filters.region, filters.state, filters.city, filters.category, fetchNewsCallback]);
+
+  // Listen for updates from the audio player and update the local state
+  useEffect(() => {
+    audioPlayer.onArticleProcessed = handleArticleUpdate;
+  }, [audioPlayer, handleArticleUpdate]);
 
 
   const clearFilters = () => {
@@ -206,22 +207,6 @@ const NewsApp = () => {
     return INDIAN_STATES[filters.state] || [];
   }, [filters.state, filters.region]);
   
-  const handleListenToAll = () => {
-    if (news.length > 0) {
-      audioPlayer.playPlaylist(news, filters.language);
-      toast({
-        title: "Starting Playlist",
-        description: `Playing all ${news.length} articles in the current view.`,
-      });
-    } else {
-      toast({
-        variant: "destructive",
-        title: "No Articles to Play",
-        description: "There are no articles in the current feed to create a playlist.",
-      });
-    }
-  };
-
   const addToPodcast = (article: Article) => {
     if (!podcastList.find(p => p.id === article.id)) {
       setPodcastList(prev => [...prev, article]);
@@ -301,10 +286,6 @@ const NewsApp = () => {
               </p>
             </div>
              <div className="flex items-center gap-2">
-               <Button variant="outline" onClick={handleListenToAll} disabled={loading || news.length === 0}>
-                <Library className="mr-2 h-4 w-4" />
-                Listen to All
-              </Button>
               <Button variant="outline" onClick={handleCreatePodcast} disabled={loading || news.length === 0}>
                 <Podcast className="mr-2 h-4 w-4" />
                 Create Podcast
