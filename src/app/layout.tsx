@@ -2,6 +2,9 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/components/theme-provider';
+import { AudioPlayerProvider } from '@/context/audio-player-context';
+import { AudioPlayer } from '@/components/audio-player';
+import type { Language } from '@/lib/types';
 
 export const metadata: Metadata = {
   title: 'Prayas News Terminal',
@@ -13,6 +16,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const language: Language = 'en'; // or 'hi', this could come from user settings
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -34,8 +38,11 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
-          <Toaster />
+          <AudioPlayerProvider>
+            {children}
+            <AudioPlayer language={language} />
+            <Toaster />
+          </AudioPlayerProvider>
         </ThemeProvider>
       </body>
     </html>

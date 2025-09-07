@@ -18,12 +18,13 @@ import {
   Rss,
   Plus,
   Download,
+  Headphones,
+  Info
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { Article, Language } from '@/lib/types';
 import { fetchAndProcessNews } from '@/ai/flows/fetch-and-process-news';
-import { generateTTSAudioClip } from '@/ai/flows/generate-tts-audio-clip';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
@@ -36,6 +37,9 @@ import {
 } from '@/components/ui/dialog';
 import { translateAndSummarizeArticleHindi } from '@/ai/flows/translate-and-summarize-article-hindi';
 import { generatePodcastFromArticles } from '@/ai/flows/generate-podcast-from-articles';
+import { useAudioPlayer } from '@/context/audio-player-context';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+
 
 const INDIAN_STATES: Record<string, string[]> = {
   'Andhra Pradesh': ['Visakhapatnam', 'Vijayawada', 'Guntur', 'Tirupati'],
@@ -72,66 +76,20 @@ const NewsApp = () => {
     language: 'en' as Language,
   });
   const { toast } = useToast();
+  const audioPlayer = useAudioPlayer();
+
 
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
   const [podcastList, setPodcastList] = useState<Article[]>([]);
   const [podcastLanguage, setPodcastLanguage] = useState<'en' | 'hi' | 'bilingual'>('en');
   const [isGeneratingPodcast, setIsGeneratingPodcast] = useState(false);
   const [generatedPodcastAudio, setGeneratedPodcastAudio] = useState<string | null>(null);
-  
-  // State for TTS playback
-  const [isListeningAll, setIsListeningAll] = useState(false);
-  const [currentSpokenIndex, setCurrentSpokenIndex] = useState(-1);
-  const audioRef = React.useRef<HTMLAudioElement | null>(null);
-  const playlistRef = React.useRef<Article[]>([]);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      audioRef.current = new Audio();
-      audioRef.current.onended = () => {
-        if (isListeningAll) {
-          playNextInPlaylist();
-        }
-      };
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isListeningAll]);
+  const handleArticleUpdate = useCallback((updatedArticle: Article) => {
+    setNews(prevNews => prevNews.map(a => a.id === updatedArticle.id ? updatedArticle : a));
+    audioPlayer.updateArticleInList(updatedArticle);
+  }, [audioPlayer]);
   
-  const playNextInPlaylist = useCallback(async () => {
-    const nextIndex = currentSpokenIndex + 1;
-    if (nextIndex < playlistRef.current.length) {
-      setCurrentSpokenIndex(nextIndex);
-      const article = playlistRef.current[nextIndex];
-      const lang = filters.language;
-      const title = lang === 'hi' && article.titleHi ? article.titleHi : article.title;
-      const points = lang === 'hi' && article.importantPointsHi.length > 0 ? article.importantPointsHi : article.importantPoints;
-  
-      try {
-        const result = await generateTTSAudioClip({
-          title: title,
-          importantPoints: points.length > 0 ? points : [article.summary], // Fallback to summary
-          language: lang === 'hi' ? 'hi-IN' : 'en-IN',
-        });
-        if (audioRef.current) {
-          audioRef.current.src = result.audioDataUri;
-          audioRef.current.play();
-        }
-      } catch (e) {
-        console.error("Error generating audio for playlist item", e);
-        toast({
-          variant: "destructive",
-          title: "Audio Generation Failed",
-          description: `Could not generate audio for "${title}". Skipping.`,
-        });
-        playNextInPlaylist(); // Skip to the next one
-      }
-    } else {
-      setIsListeningAll(false);
-      setCurrentSpokenIndex(-1);
-    }
-  }, [currentSpokenIndex, filters.language, toast]);
-
-
   const processAndSetNews = useCallback(async (articles: Article[], language: Language) => {
     if (language === 'hi') {
       toast({ title: 'Translating articles to Hindi...', description: 'Please wait.' });
@@ -212,17 +170,21 @@ const NewsApp = () => {
         newFilters.city = '';
       } else if (filterType === 'state') {
         newFilters.city = '';
+      } else if (filterType === 'language') {
+         // Re-fetch and re-process when language changes
+         fetchNewsCallback(newFilters);
       }
       return newFilters;
     });
-  }, []);
+  }, [fetchNewsCallback]);
   
   useEffect(() => {
     const handler = setTimeout(() => {
         fetchNewsCallback(filters);
     }, 500); // Debounce search input
     return () => clearTimeout(handler);
-  }, [filters, fetchNewsCallback]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.search, filters.region, filters.state, filters.city, filters.category]);
 
 
   const clearFilters = () => {
@@ -235,6 +197,7 @@ const NewsApp = () => {
       language: 'en' as Language,
     };
     setFilters(newFilters);
+    fetchNewsCallback(newFilters);
   };
 
   const availableCities = useMemo(() => {
@@ -306,24 +269,6 @@ const NewsApp = () => {
       setIsGeneratingPodcast(false);
     }
   };
-  
-  const toggleListenAll = () => {
-    if (isListeningAll) {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = '';
-      }
-      setIsListeningAll(false);
-      setCurrentSpokenIndex(-1);
-      playlistRef.current = [];
-    } else if (news.length > 0) {
-      toast({title: "Preparing audio stream...", description: "This may take a moment."})
-      playlistRef.current = news;
-      setIsListeningAll(true);
-      setCurrentSpokenIndex(-1); // Will be incremented to 0 by playNext
-      playNextInPlaylist();
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 transition-colors duration-300">
@@ -338,10 +283,6 @@ const NewsApp = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={toggleListenAll} disabled={loading || news.length === 0}>
-              {isListeningAll ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-              {isListeningAll ? 'Stop Listening' : 'Listen to All'}
-            </Button>
             <Button variant="outline" onClick={handleCreatePodcast} disabled={loading || news.length === 0}>
               <Podcast className="mr-2 h-4 w-4" />
               Create Podcast
@@ -469,17 +410,21 @@ const NewsApp = () => {
           </div>
         ) : news.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-            {news.map((article, index) => {
-              const isCurrentlySpoken = isListeningAll && currentSpokenIndex === index;
+            {news.map((article) => {
+              const isCurrentlyPlaying = audioPlayer.currentArticle?.id === article.id && audioPlayer.isPlaying;
+              const isCurrentlyLoading = audioPlayer.currentArticle?.id === article.id && audioPlayer.isLoading;
+              
               const title = filters.language === 'hi' && article.titleHi ? article.titleHi : article.title;
               const summary = filters.language === 'hi' && article.summaryHi ? article.summaryHi : article.summary;
+
+              const needsProcessing = (filters.language === 'en' && article.importantPoints.length === 0) || (filters.language === 'hi' && !article.titleHi);
 
               return (
                 <article
                   key={article.id}
                   className={cn(
                     "bg-white dark:bg-slate-800/50 rounded-xl shadow-md hover:shadow-2xl transition-all duration-300 flex flex-col overflow-hidden border border-slate-200 dark:border-slate-700/50 group",
-                    isCurrentlySpoken && "ring-2 ring-indigo-500"
+                    isCurrentlyPlaying && "ring-2 ring-indigo-500"
                   )}
                 >
                   {article.media.image && (
@@ -519,6 +464,19 @@ const NewsApp = () => {
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-800 p-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700/50">
                     <div className="flex items-center gap-2">
+                       <button onClick={() => audioPlayer.playArticle(article, filters.language, handleArticleUpdate)} disabled={isCurrentlyLoading} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors" aria-label="Listen to Article">
+                          {isCurrentlyLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Headphones className="w-5 h-5"/>}
+                       </button>
+                       {needsProcessing && (
+                         <Tooltip>
+                           <TooltipTrigger asChild>
+                             <Info className="w-4 h-4 text-blue-500 cursor-help" />
+                           </TooltipTrigger>
+                           <TooltipContent>
+                             <p>Click Listen for an AI-powered summary!</p>
+                           </TooltipContent>
+                         </Tooltip>
+                        )}
                        <button onClick={() => addToPodcast(article)} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors" aria-label="Add to Podcast">
                           <Plus className="w-5 h-5"/>
                        </button>
@@ -621,8 +579,5 @@ const NewsApp = () => {
 
 
 export default function Home() {
-  // The page is now a simple wrapper around NewsApp
   return <NewsApp />;
 }
-
-    

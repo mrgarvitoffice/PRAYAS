@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
@@ -66,7 +67,10 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   
   const updateArticleInList = useCallback((article: Article) => {
     setArticles(prev => prev.map(a => a.id === article.id ? article : a));
-  }, []);
+    if (processedArticle?.id === article.id) {
+      setProcessedArticle(article);
+    }
+  }, [processedArticle]);
 
   const playArticle = useCallback(async (article: Article, language: Language, onArticleProcessed: (article: Article) => void) => {
     if (audioRef.current) {
@@ -125,7 +129,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
           setProcessedArticle(article);
         }
         
-        finalTitle = language === 'hi' ? updatedArticle.titleHi : updatedArticle.title;
+        finalTitle = language === 'hi' ? updatedArticle.titleHi! : updatedArticle.title;
         finalPoints = language === 'hi' ? updatedArticle.importantPointsHi : updatedArticle.importantPoints;
         
         if(!finalTitle || finalPoints.length === 0) {
@@ -209,5 +213,3 @@ export const useAudioPlayer = (): AudioPlayerContextType => {
   }
   return context;
 };
-
-    

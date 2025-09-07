@@ -50,5 +50,3 @@ export function AudioPlayer({ language }: { language: Language }) {
     </div>
   );
 }
-
-    
