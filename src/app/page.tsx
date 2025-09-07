@@ -252,12 +252,13 @@ const NewsApp = () => {
     setIsGeneratingPodcast(true);
     setGeneratedPodcastAudio(null);
     try {
-      toast({ title: 'Generating your podcast...', description: 'This may take a minute or two. Using all available articles.' });
+      toast({ title: 'Generating your podcast...', description: 'This may take a minute or two. Preparing articles...' });
       
       const articlesForPodcast = await Promise.all(
         news.map(async (article) => {
+          // Process article only if the required language content is missing
           if ((podcastLanguage === 'hi' || podcastLanguage === 'bilingual') && !article.titleHi) {
-             // This article needs translation before being added to the podcast
+             console.log(`Translating article for podcast: ${article.id}`);
              setProcessingArticleIds(prev => new Set(prev).add(article.id));
              try {
                 const hindiSummary = await translateAndSummarizeArticleHindi({
@@ -270,8 +271,13 @@ const NewsApp = () => {
                     summaryHi: hindiSummary.summaryPoints.join(' '),
                     importantPointsHi: hindiSummary.summaryPoints,
                   };
-                  handleArticleUpdate(processedArticle); // Update the main state
+                  // Update the main state so the UI reflects the change
+                  handleArticleUpdate(processedArticle);
                   return processedArticle;
+             } catch (e) {
+                console.error(`Podcast pre-translation failed for ${article.id}`, e);
+                // Return original article on failure to avoid blocking the whole podcast
+                return article;
              } finally {
                 setProcessingArticleIds(prev => {
                     const newSet = new Set(prev);
@@ -283,7 +289,20 @@ const NewsApp = () => {
           return article; // Return as is if no translation needed
         })
       );
+
+      // Final check to ensure all articles have the required content now.
+      const allContentReady = articlesForPodcast.every(a => {
+        if (podcastLanguage === 'en') return !!a.title && (a.summary || a.importantPoints?.length > 0);
+        if (podcastLanguage === 'hi') return !!a.titleHi && (a.summaryHi || a.importantPointsHi?.length > 0);
+        // Bilingual requires both
+        return !!a.title && (a.summary || a.importantPoints?.length > 0) && !!a.titleHi && (a.summaryHi || a.importantPointsHi?.length > 0);
+      });
+
+      if (!allContentReady) {
+        throw new Error("Could not prepare all articles for the podcast. Some translations may have failed.");
+      }
       
+      toast({ title: 'Generating podcast script...', description: 'Your articles are ready, now creating the script.' });
       const result = await generatePodcastFromArticles({ articles: articlesForPodcast, language: podcastLanguage });
       setGeneratedPodcastAudio(result.audioDataUri);
       toast({ title: 'Podcast generated successfully!', description: 'You can now play or download it.' });
