@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Select,
   SelectContent,
@@ -33,12 +33,14 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from './ui/separator';
-import { Languages, Newspaper, Podcast, Rss } from 'lucide-react';
+import { Languages, Loader2, Newspaper, Podcast, Rss } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { fetchAndProcessNews } from '@/ai/flows/fetch-and-process-news';
 
 export function PrayasTerminal() {
-  const [filteredArticles, setFilteredArticles] = useState<Article[]>(allArticles);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [filteredArticles, setFilteredArticles] = useState<Article[]>([]);
   const [region, setRegion] = useState('India');
   const [state, setState] = useState('All India');
   const [city, setCity] = useState('All');
@@ -50,10 +52,38 @@ export function PrayasTerminal() {
 
   const states = useMemo(() => Object.keys(locationData[region] ? locationData[region].states : {}), [region]);
   const cities = useMemo(() => (region === 'India' && state && locationData.India.states[state]) ? locationData.India.states[state] : [], [region, state]);
+  
+  const loadNews = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      // For now, we fetch a general query. This can be expanded.
+      const fetchedArticles = await fetchAndProcessNews({ query: 'top' });
+      setArticles(fetchedArticles);
+      setFilteredArticles(fetchedArticles);
+    } catch (error) {
+      console.error('Failed to fetch news:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Failed to load news',
+        description: 'Could not fetch the latest articles. Please try again later.',
+      });
+      // Fallback to mock data on error
+      setArticles(allArticles);
+      setFilteredArticles(allArticles);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
 
   useEffect(() => {
-    let result = allArticles;
+    loadNews();
+  }, [loadNews]);
 
+
+  useEffect(() => {
+    let result = articles;
+
+    // The filtering logic below is kept for when the API provides this data
     if (region !== 'World') {
       result = result.filter(a => a.country === 'India');
       if (state && state !== 'All India') {
@@ -63,15 +93,16 @@ export function PrayasTerminal() {
         }
       }
     } else {
-      result = result.filter(a => a.country === 'World');
+      result = result.filter(a => a.country !== 'India');
     }
 
     if (category && category !== 'All') {
-      result = result.filter(a => a.category === category);
+      // newsdata.io returns an array of categories. We check if our selected one is present.
+      result = result.filter(a => a.category.toLowerCase().includes(category.toLowerCase()));
     }
 
     setFilteredArticles(result);
-  }, [region, state, city, category]);
+  }, [region, state, city, category, articles]);
 
   const handleRegionChange = (value: string) => {
     setRegion(value);
@@ -111,7 +142,7 @@ export function PrayasTerminal() {
       <SidebarHeader>
         <h2 className="text-lg font-semibold font-headline">Filters</h2>
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent asChild>
         <ScrollArea>
           <SidebarGroup>
             <label className="text-sm font-medium">Region</label>
@@ -134,7 +165,7 @@ export function PrayasTerminal() {
           </SidebarGroup>
           <SidebarGroup>
             <label className="text-sm font-medium">City</label>
-            <Select value={city} onValueChange={setCity} disabled={!cities.length}>
+            <Select value={city} onValueChange={setCity} disabled={!cities || cities.length === 0}>
               <SelectTrigger><SelectValue placeholder="Select City" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="All">All Cities</SelectItem>
@@ -152,6 +183,9 @@ export function PrayasTerminal() {
                 <SelectItem value="Politics">Politics</SelectItem>
                 <SelectItem value="Economy">Economy</SelectItem>
                 <SelectItem value="Environment">Environment</SelectItem>
+                <SelectItem value="Technology">Technology</SelectItem>
+                <SelectItem value="Sports">Sports</SelectItem>
+                <SelectItem value="Entertainment">Entertainment</SelectItem>
               </SelectContent>
             </Select>
           </SidebarGroup>
@@ -194,7 +228,13 @@ export function PrayasTerminal() {
             </div>
           </header>
           <main className="flex-1 p-4 md:p-8 container mx-auto">
-            {filteredArticles.length > 0 ? (
+            {isLoading ? (
+               <div className="flex flex-col items-center justify-center h-full text-center py-20">
+                  <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
+                  <h2 className="text-2xl font-bold font-headline mb-2">Fetching Latest News...</h2>
+                  <p className="text-muted-foreground">Please wait while we gather and process the articles for you.</p>
+              </div>
+            ) : filteredArticles.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {filteredArticles.map(article => (
                   <NewsCard key={article.id} article={article} language={language} onAddToPodcast={addToPodcast} />

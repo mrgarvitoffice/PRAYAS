@@ -9,7 +9,7 @@ export type Article = {
   contentUrl: string;
   source: { name: string; cred_score: number };
   publishedAt: string;
-  country: 'World' | 'India';
+  country: 'World' | 'India' | string; // Allow for other countries
   state: string | null;
   city: string | null;
   category: string;
@@ -26,3 +26,24 @@ export type LocationData = {
 };
 
 export type Language = 'en' | 'hi';
+
+export type NewsDataArticle = {
+  article_id: string;
+  title: string;
+  link: string;
+  description: string | null;
+  pubDate: string;
+  image_url: string | null;
+  source_id: string;
+  country: string[];
+  category: string[];
+  language: string;
+  content: string | null;
+};
+
+export type NewsDataResponse = {
+  status: string;
+  totalResults: number;
+  results: NewsDataArticle[];
+  nextPage: string | null;
+};
