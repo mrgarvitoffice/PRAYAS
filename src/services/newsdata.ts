@@ -28,8 +28,7 @@ export async function fetchNews(
     country: country.toLowerCase(),
   });
 
-  // The API requires either `q` or `category`, but not both together with `country`.
-  // The free plan doesn't support the 'size' parameter.
+  // NewsData.io requires `q` OR `category`, but not both when `country` is specified.
   if (category && category.toLowerCase() !== 'all') {
     params.set('category', category.toLowerCase());
   } else {
@@ -75,6 +74,15 @@ export async function fetchNews(
   } catch (error) {
     console.error('fetchNews error:', error);
     // Re-throw the error to be handled by the calling flow
+    if (error instanceof Error) {
+        if (error.message.includes('422')) {
+          throw new Error('Invalid request parameters. Check your API key and request parameters.');
+        } else if (error.message.includes('401')) {
+          throw new Error('Invalid API key. Please check your newsdata.io API key.');
+        } else if (error.message.includes('429')) {
+          throw new Error('Rate limit exceeded. Please wait before making another request.');
+        }
+    }
     throw error;
   }
 }
