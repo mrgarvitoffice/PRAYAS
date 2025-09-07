@@ -13,6 +13,7 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import wav from 'wav';
 import type {Article} from '@/lib/types';
+import { generatePodcastScript } from './generate-podcast-script';
 
 const GeneratePodcastFromArticlesInputSchema = z.object({
   articles: z.array(z.any()).describe('An array of article objects to include in the podcast.'),
@@ -56,21 +57,10 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
   outputSchema: GeneratePodcastFromArticlesOutputSchema,
 }, async ({ articles, language }) => {
   
-  const getArticleScript = (article: Article, lang: 'en' | 'hi') => {
-    const title = lang === 'en' ? article.title : article.titleHi;
-    const summary = lang === 'en' ? (article.importantPoints.join('. ') || article.summary) : (article.importantPointsHi.join('. ') || article.summaryHi) ;
-    return `Narrator: Next up, from ${article.source.name}. Headline: Speaker1: ${title}. Narrator: ${summary}`;
-  };
-
-  let podcastScript = articles.map(article => {
-    if (language === 'bilingual') {
-      return `${getArticleScript(article, 'en')} ${getArticleScript(article, 'hi')}`;
-    }
-    return getArticleScript(article, language as 'en' | 'hi');
-  }).join('\n');
-
-  const fullScript = `Narrator: Welcome to your AI news podcast. Here are today's top stories. ${podcastScript}`;
-
+  // Step 1: Generate the podcast script using a dedicated flow
+  const { script } = await generatePodcastScript({ articles, language });
+  
+  // Step 2: Use the generated script to create the TTS audio
   const { media } = await ai.generate({
     model: 'googleai/gemini-2.5-flash-preview-tts',
     config: {
@@ -84,7 +74,7 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
         },
       },
     },
-    prompt: fullScript,
+    prompt: script,
   });
 
   if (!media) {
@@ -96,5 +86,3 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
     audioDataUri: `data:audio/wav;base64,${await toWav(audioBuffer)}`,
   };
 });
-
-    
