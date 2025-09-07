@@ -444,7 +444,7 @@ const NewsApp = () => {
     setIsSpeakingPodcast(true);
     setIsPausedPodcast(false);
     utterances.forEach(u => window.speechSynthesis.speak(u));
-  }, [generatedPodcastScript, filters.language, voices, isSpeakingPodcast, isPausedPodcast, toast]);
+  }, [generatedPodcastScript, filters.language, toast, isSpeakingPodcast, isPausedPodcast]);
 
   const stopPodcastScript = useCallback(() => {
     window.speechSynthesis.cancel();

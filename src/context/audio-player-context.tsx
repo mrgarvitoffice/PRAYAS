@@ -27,7 +27,6 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const { toast } = useToast();
   
   const onArticleUpdateRef = useRef<(article: Article) => void>();
@@ -35,10 +34,6 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
 
   const stop = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = '';
-    }
     if (utteranceRef.current) {
       window.speechSynthesis.cancel();
       utteranceRef.current = null;
@@ -117,9 +112,14 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             return;
         }
         
-        const title = language === 'hi' ? articleWithContent.titleHi : articleWithContent.title;
-        const points = language === 'hi' ? articleWithContent.importantPointsHi : articleWithContent.importantPoints;
-        const contentToRead = `Title: ${title}. Summary: ${points.join('. ')}`;
+        const title = language === 'hi' && articleWithContent.titleHi ? articleWithContent.titleHi : articleWithContent.title;
+        const points = language === 'hi' && articleWithContent.importantPointsHi.length > 0 ? articleWithContent.importantPointsHi : articleWithContent.importantPoints;
+        const fallbackSummary = language === 'hi' && articleWithContent.summaryHi ? articleWithContent.summaryHi : articleWithContent.summary;
+
+        const contentToRead = points.length > 0 
+            ? `Title: ${title}. Summary: ${points.join('. ')}`
+            : `Title: ${title}. Summary: ${fallbackSummary}`;
+
 
         utteranceRef.current = new SpeechSynthesisUtterance(contentToRead);
         const utterance = utteranceRef.current;
@@ -138,6 +138,8 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
 
         utterance.onstart = () => setIsPlaying(true);
+        utterance.onpause = () => setIsPlaying(false);
+        utterance.onresume = () => setIsPlaying(true);
         utterance.onend = stop;
         utterance.onerror = (e) => {
             console.error("Speech synthesis error", e);
