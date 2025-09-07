@@ -809,10 +809,15 @@ const NewsApp = () => {
                 </div>
                  { hqAudioError && <p className="text-sm text-red-500 text-center">{hqAudioError}</p> }
                  { hqAudioDataUri && (
-                    <div className="text-center">
-                        <a href={hqAudioDataUri} download="podcast_discussion.wav" className={cn(buttonVariants({variant: "default"}), "mt-2")}>
-                           <Download className="mr-2 h-4 w-4"/> Download Audio
-                        </a>
+                    <div className="mt-4 space-y-4">
+                        <audio controls src={hqAudioDataUri} className="w-full">
+                            Your browser does not support the audio element.
+                        </audio>
+                        <div className="text-center">
+                            <a href={hqAudioDataUri} download="podcast_discussion.wav" className={cn(buttonVariants({variant: "default"}), "mt-2")}>
+                               <Download className="mr-2 h-4 w-4"/> Download Audio
+                            </a>
+                        </div>
                     </div>
                  )}
                  <div className="max-h-60 overflow-y-auto p-3 my-4 border rounded-md bg-slate-50 dark:bg-slate-800">
