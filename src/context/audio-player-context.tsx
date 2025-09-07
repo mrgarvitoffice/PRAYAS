@@ -129,8 +129,8 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         utterance.lang = langCode;
 
         const voices = window.speechSynthesis.getVoices();
-        const bestVoice = voices.find(v => v.lang === langCode && v.name.includes('Google')) ||
-                          voices.find(v => v.lang === langCode && v.name.includes('Natural')) ||
+        const bestVoice = voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('google')) ||
+                          voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('natural')) ||
                           voices.find(v => v.lang === langCode && v.localService) ||
                           voices.find(v => v.lang === langCode);
 

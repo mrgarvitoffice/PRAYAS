@@ -49,15 +49,15 @@ const dialoguePrompt = ai.definePrompt({
     model: 'googleai/gemini-2.5-flash-lite',
     input: { schema: z.object({ combinedSummaries: z.string(), language: z.string() }) },
     output: { format: 'text' },
-    prompt: `You are an expert multilingual podcast scriptwriter. Your primary task is to convert the following collection of news summaries into a natural-sounding, two-person dialogue script.
+    prompt: `You are an expert multilingual podcast scriptwriter for UPSC aspirants. Your primary task is to convert the following collection of news summaries into a clear, concise, and engaging two-person dialogue script.
 
 **CRUCIAL INSTRUCTION: LANGUAGE ADHERENCE**
 The user has specified the desired language as: **{{{language}}}**.
 You **MUST** write the entire dialogue script in that same language.
 
-The dialogue should be between "Speaker1" (a knowledgeable and slightly formal expert) and "Speaker2" (an inquisitive and friendly learner). Speaker1 should introduce and explain the topics from the summaries, and Speaker2 should ask clarifying questions or make comments to guide the conversation.
+The dialogue should be between "Speaker1" (a knowledgeable and slightly formal expert) and "Speaker2" (an inquisitive and analytical student). Speaker1 should introduce and explain the topics, connecting them to relevant UPSC syllabus areas where possible. Speaker2 should ask clarifying questions, probe for deeper analysis, and summarize key takeaways.
 
-**IMPORTANT:** The length of the dialogue should be proportional to the amount of content provided. If there are many summaries, create a longer, more detailed discussion. If there are only a few, keep it brief. Touch on each of the topics provided.
+**IMPORTANT:** The length and depth of the dialogue must be proportional to the amount of content provided. If there are many summaries, create a longer, more detailed discussion. If there are only a few, keep it brief but insightful. Touch on each of the topics provided.
 
 **CRITICAL FORMATTING RULE:** The output MUST be a script formatted *exactly* like this, with each line starting with "Speaker1:" or "Speaker2:".
 Speaker1: [First line of dialogue in specified language]
@@ -71,7 +71,7 @@ News Summaries:
 {{{combinedSummaries}}}
 ---
 
-Please provide the dialogue script below in the specified language, ensuring its length reflects the amount of source material.`
+Please provide the dialogue script below in the specified language, ensuring its length and depth reflect the amount of source material and its tone is suitable for UPSC preparation.`
 });
 
 

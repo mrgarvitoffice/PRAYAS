@@ -393,8 +393,8 @@ const NewsApp = () => {
     const langCode = filters.language === 'hi' ? 'hi-IN' : 'en-US';
     utterance.lang = langCode;
 
-    const bestVoice = voices.find(v => v.lang === langCode && v.name.includes('Google')) ||
-                      voices.find(v => v.lang === langCode && v.name.includes('Natural')) ||
+    const bestVoice = voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('google')) ||
+                      voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('natural')) ||
                       voices.find(v => v.lang === langCode && v.localService) ||
                       voices.find(v => v.lang === langCode);
 
@@ -457,8 +457,8 @@ const NewsApp = () => {
 
     const langCode = filters.language === 'hi' ? 'hi-IN' : 'en-US';
     const allVoices = window.speechSynthesis.getVoices().filter(v => v.lang === langCode);
-    const voice1 = allVoices.find(v => v.name.includes('Google')) || allVoices[0];
-    const voice2 = allVoices.find(v => v.name.includes('Natural')) || allVoices[1] || allVoices[0];
+    const voice1 = allVoices.find(v => v.name.toLowerCase().includes('google')) || allVoices[0];
+    const voice2 = allVoices.find(v => v.name.toLowerCase().includes('natural')) || allVoices[1] || allVoices[0];
 
     const lines = generatedPodcastScript.split('\n').filter(line => line.startsWith('Speaker1:') || line.startsWith('Speaker2:'));
     const utterances = lines.map((line, index) => {
