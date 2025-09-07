@@ -19,7 +19,8 @@ import {
   Plus,
   Download,
   Headphones,
-  Info
+  Info,
+  Library,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -204,6 +205,22 @@ const NewsApp = () => {
     if (!filters.state || filters.region !== 'india') return [];
     return INDIAN_STATES[filters.state] || [];
   }, [filters.state, filters.region]);
+  
+  const handleListenToAll = () => {
+    if (news.length > 0) {
+      audioPlayer.playPlaylist(news, filters.language, handleArticleUpdate);
+      toast({
+        title: "Starting Playlist",
+        description: `Playing all ${news.length} articles in the current view.`,
+      });
+    } else {
+      toast({
+        variant: "destructive",
+        title: "No Articles to Play",
+        description: "There are no articles in the current feed to create a playlist.",
+      });
+    }
+  };
 
   const addToPodcast = (article: Article) => {
     if (!podcastList.find(p => p.id === article.id)) {
@@ -283,7 +300,11 @@ const NewsApp = () => {
                 Your AI-powered daily briefing for current affairs.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+             <div className="flex items-center gap-2">
+               <Button variant="outline" onClick={handleListenToAll} disabled={loading || news.length === 0}>
+                <Library className="mr-2 h-4 w-4" />
+                Listen to All
+              </Button>
               <Button variant="outline" onClick={handleCreatePodcast} disabled={loading || news.length === 0}>
                 <Podcast className="mr-2 h-4 w-4" />
                 Create Podcast

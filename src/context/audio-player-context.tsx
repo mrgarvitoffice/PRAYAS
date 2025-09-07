@@ -15,6 +15,7 @@ interface AudioPlayerContextType {
   isLoading: boolean;
   progress: number;
   playArticle: (article: Article, language: Language, onArticleProcessed: (article: Article) => void) => void;
+  playPlaylist: (articles: Article[], language: Language, onArticleProcessed: (article: Article) => void) => void;
   togglePlayPause: () => void;
   stop: () => void;
   seek: (progress: number) => void;
@@ -31,7 +32,23 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [progress, setProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const { toast } = useToast();
-  const [articles, setArticles] = useState<Article[]>([]);
+  
+  const [playlist, setPlaylist] = useState<Article[]>([]);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  const [playlistLanguage, setPlaylistLanguage] = useState<Language>('en');
+  const onPlaylistArticleProcessed = useRef<(article: Article) => void>(() => {});
+
+  const playNextInPlaylist = useCallback(() => {
+    if (currentTrackIndex < playlist.length - 1) {
+      const nextIndex = currentTrackIndex + 1;
+      setCurrentTrackIndex(nextIndex);
+      playArticle(playlist[nextIndex], playlistLanguage, onPlaylistArticleProcessed.current);
+    } else {
+      // End of playlist
+      stop();
+    }
+  }, [playlist, currentTrackIndex, playlistLanguage]);
+
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -45,7 +62,9 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       };
       const handleEnded = () => {
         setIsPlaying(false);
-        // Don't clear current article to allow re-play
+        if (playlist.length > 0) {
+            playNextInPlaylist();
+        }
       };
       const handlePlay = () => setIsPlaying(true);
       const handlePause = () => setIsPlaying(false);
@@ -63,10 +82,10 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         audio.pause();
       };
     }
-  }, []);
+  }, [playlist, playNextInPlaylist]);
   
   const updateArticleInList = useCallback((article: Article) => {
-    setArticles(prev => prev.map(a => a.id === article.id ? article : a));
+     setPlaylist(prev => prev.map(a => a.id === article.id ? article : a));
     if (processedArticle?.id === article.id) {
       setProcessedArticle(article);
     }
@@ -74,7 +93,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const playArticle = useCallback(async (article: Article, language: Language, onArticleProcessed: (article: Article) => void) => {
     if (audioRef.current) {
-      if (currentArticle?.id === article.id) {
+      if (currentArticle?.id === article.id && playlist.length === 0) { // Don't toggle for playlist
         if (isPlaying) {
           audioRef.current.pause();
         } else {
@@ -99,7 +118,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         if (needsProcessing) {
           toast({
             title: "Generating Smart Summary...",
-            description: "Please wait while we process and prepare the audio.",
+            description: `Processing "${article.title}"`,
           });
           const [englishSummary, hindiSummary] = await Promise.all([
             summarizeArticle({
@@ -129,9 +148,9 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
           setProcessedArticle(article);
         }
         
-        finalTitle = language === 'hi' ? updatedArticle.titleHi! : updatedArticle.title;
-        finalPoints = language === 'hi' ? updatedArticle.importantPointsHi : updatedArticle.importantPoints;
-        
+        finalTitle = language === 'hi' && updatedArticle.titleHi ? updatedArticle.titleHi : updatedArticle.title;
+        finalPoints = language === 'hi' && updatedArticle.importantPointsHi.length > 0 ? updatedArticle.importantPointsHi : (language === 'en' && updatedArticle.importantPoints.length > 0) ? updatedArticle.importantPoints : updatedArticle.summary.split('. ');
+
         if(!finalTitle || finalPoints.length === 0) {
             throw new Error("Content for TTS is not available after processing.")
         }
@@ -159,7 +178,17 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setIsLoading(false);
       }
     }
-  }, [toast, currentArticle, isPlaying]);
+  }, [toast, currentArticle, isPlaying, playlist.length]);
+
+  const playPlaylist = (articles: Article[], language: Language, onArticleProcessed: (article: Article) => void) => {
+    setPlaylist(articles);
+    setCurrentTrackIndex(0);
+    setPlaylistLanguage(language);
+    onPlaylistArticleProcessed.current = onArticleProcessed;
+    if (articles.length > 0) {
+      playArticle(articles[0], language, onArticleProcessed);
+    }
+  };
 
   const togglePlayPause = useCallback(() => {
     if (audioRef.current?.src) {
@@ -179,6 +208,8 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setProcessedArticle(null);
       setIsPlaying(false);
       setProgress(0);
+      setPlaylist([]);
+      setCurrentTrackIndex(0);
     }
   }, []);
 
@@ -197,6 +228,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     isLoading,
     progress,
     playArticle,
+    playPlaylist,
     togglePlayPause,
     stop,
     seek,

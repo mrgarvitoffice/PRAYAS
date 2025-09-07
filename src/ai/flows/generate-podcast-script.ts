@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview This file defines a Genkit flow for generating a podcast script from a list of articles.
@@ -50,7 +51,11 @@ const generatePodcastScriptFlow = ai.defineFlow({
     return `English Version: ${englishContent}. Now in Hindi: ${hindiContent}`;
   };
 
-  const articleSnippets = articles.map(getArticleContent).join('\n\n---\n\n');
+  const articleSnippets = articles.map(article => {
+    const source = article.source?.name || 'an unknown source';
+    const content = getArticleContent(article);
+    return `Source: ${source}\nContent: ${content}`;
+  }).join('\n\n---\n\n');
 
   const { output } = await ai.generate({
     model: 'googleai/gemini-2.5-flash-lite',
