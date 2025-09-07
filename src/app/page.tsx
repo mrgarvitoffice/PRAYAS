@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/dialog';
 import { translateAndSummarizeArticleHindi } from '@/ai/flows/translate-and-summarize-article-hindi';
 import { generateDiscussionAudio } from '@/ai/flows/generate-discussion-audio';
+import { generateTtsAudio } from '@/ai/flows/generate-tts-audio';
 import { useAudioPlayer } from '@/context/audio-player-context';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -88,6 +89,10 @@ const NewsApp = () => {
   const [isGeneratingPodcastScript, setIsGeneratingPodcastScript] = useState(false);
   const [generatedPodcastScript, setGeneratedPodcastScript] = useState<string | null>(null);
   
+  const [isGeneratingHqAudio, setIsGeneratingHqAudio] = useState(false);
+  const [hqAudioDataUri, setHqAudioDataUri] = useState<string | null>(null);
+  const [hqAudioError, setHqAudioError] = useState<string | null>(null);
+
   const [isSpeakingHeadlines, setIsSpeakingHeadlines] = useState(false);
   const [isPausedHeadlines, setIsPausedHeadlines] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -248,6 +253,8 @@ const NewsApp = () => {
   const handleCreatePodcast = () => {
     if (news.length > 0) {
       setGeneratedPodcastScript(null);
+      setHqAudioDataUri(null);
+      setHqAudioError(null);
       setIsPodcastModalOpen(true);
     } else {
        toast({
@@ -262,6 +269,8 @@ const NewsApp = () => {
     if (news.length === 0) return;
     setIsGeneratingPodcastScript(true);
     setGeneratedPodcastScript(null);
+    setHqAudioDataUri(null);
+    setHqAudioError(null);
     try {
       toast({ title: 'Generating your discussion script...', description: 'Preparing articles and writing dialogue...' });
       
@@ -283,6 +292,30 @@ const NewsApp = () => {
     }
   };
   
+  const handleGeneratePodcastAudio = async () => {
+    if (!generatedPodcastScript) return;
+    setIsGeneratingHqAudio(true);
+    setHqAudioDataUri(null);
+    setHqAudioError(null);
+    try {
+        toast({ title: 'Generating High-Quality Audio...', description: 'This may take a moment. Please wait...' });
+        const result = await generateTtsAudio({ script: generatedPodcastScript, language: filters.language });
+        setHqAudioDataUri(result.audioDataUri);
+        toast({ title: 'High-Quality Audio Ready!', description: 'You can now download the audio file.' });
+    } catch (e) {
+      console.error("Error generating HQ audio", e);
+      const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
+      setHqAudioError(errorMessage);
+      toast({
+        variant: "destructive",
+        title: "HQ Audio Generation Failed",
+        description: errorMessage,
+      });
+    } finally {
+      setIsGeneratingHqAudio(false);
+    }
+  };
+
   const readAllHeadlines = useCallback(() => {
     if (isSpeakingHeadlines && !isPausedHeadlines) {
       window.speechSynthesis.pause();
@@ -698,7 +731,7 @@ const NewsApp = () => {
               <DialogTitle>Generate Your Discussion Episode</DialogTitle>
               <DialogDescription>
                 {generatedPodcastScript
-                  ? 'Your discussion script is ready! Play it directly.'
+                  ? 'Your discussion script is ready! Play it directly or generate a high-quality audio version to download.'
                   : `A discussion script will be generated from the top ${Math.min(10, news.length)} available articles.`}
               </DialogDescription>
             </DialogHeader>
@@ -716,12 +749,22 @@ const NewsApp = () => {
                         {isSpeakingPodcast && !isPausedPodcast ? 'Pause' : isPausedPodcast ? 'Resume' : 'Play Discussion'}
                     </Button>
                     {(isSpeakingPodcast || isPausedPodcast) && (
-                        <Button onClick={stopPodcastScript} variant="destructive" size="lg">
-                        <StopCircle className="mr-2 h-5 w-5" />
-                        Stop
+                        <Button onClick={stopPodcastScript} variant="destructive" size="icon">
+                           <StopCircle className="h-5 w-5" />
                         </Button>
                     )}
+                     <Button onClick={handleGeneratePodcastAudio} variant="outline" size="icon" disabled={isGeneratingHqAudio}>
+                        {isGeneratingHqAudio ? <Loader2 className="h-5 w-5 animate-spin" /> :  <Headphones className="h-5 w-5" />}
+                    </Button>
                 </div>
+                 { hqAudioError && <p className="text-sm text-red-500 text-center">{hqAudioError}</p> }
+                 { hqAudioDataUri && (
+                    <div className="text-center">
+                        <a href={hqAudioDataUri} download="podcast_discussion.wav" className={cn(buttonVariants({variant: "default"}), "mt-2")}>
+                           <Download className="mr-2 h-4 w-4"/> Download Audio
+                        </a>
+                    </div>
+                 )}
                  <div className="max-h-60 overflow-y-auto p-3 my-4 border rounded-md bg-slate-50 dark:bg-slate-800">
                     <p className="text-sm whitespace-pre-wrap font-mono text-slate-700 dark:text-slate-300">{generatedPodcastScript}</p>
                  </div>
@@ -764,5 +807,3 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
-
-    
