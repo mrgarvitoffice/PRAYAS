@@ -59,6 +59,9 @@ const summarizeArticleFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await prompt(input);
-    return output!;
+    if (!output) {
+      throw new Error("Failed to get a valid summary from the AI model.");
+    }
+    return output;
   }
 );

@@ -53,49 +53,43 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [isPlaying]);
 
-  const processAndCacheArticle = useCallback(async (articleToProcess: Article, language: Language): Promise<Article> => {
+  const processAndCacheArticle = useCallback(async (articleToProcess: Article, language: Language): Promise<Article | null> => {
     let updatedArticle = { ...articleToProcess };
     
-    // Step 1: Ensure article has summary and important points in the required language.
-    // This is the "on-demand" text processing part.
-    const needsEnglishProcessing = language === 'en' && articleToProcess.importantPoints.length === 0;
-    const needsHindiProcessing = language === 'hi' && (!articleToProcess.titleHi || articleToProcess.importantPointsHi.length === 0);
+    const needsProcessing = (language === 'en' && articleToProcess.importantPoints.length === 0) || (language === 'hi' && (!articleToProcess.titleHi || articleToProcess.importantPointsHi.length === 0));
 
-    if (needsEnglishProcessing || needsHindiProcessing) {
+    if (needsProcessing) {
       toast({
         title: "Generating Smart Summary...",
         description: `Processing "${articleToProcess.title.slice(0, 50)}..."`,
       });
       
       try {
-        const [englishSummary, hindiSummary] = await Promise.all([
-            summarizeArticle({ title: articleToProcess.title, full_text: articleToProcess.rawContent }),
-            translateAndSummarizeArticleHindi({ articleTitle: articleToProcess.title, articleContent: articleToProcess.rawContent })
-        ]);
-
-        updatedArticle = {
-            ...updatedArticle,
-            title: englishSummary.heading,
-            summary: englishSummary.important_points.join(' '),
-            importantPoints: englishSummary.important_points,
-            titleHi: hindiSummary.translatedTitle,
-            summaryHi: hindiSummary.summaryPoints.join(' '),
-            importantPointsHi: hindiSummary.summaryPoints,
-        };
+        if (language === 'en') {
+          const summary = await summarizeArticle({ title: articleToProcess.title, full_text: articleToProcess.rawContent });
+          updatedArticle.title = summary.heading;
+          updatedArticle.summary = summary.important_points.join(' ');
+          updatedArticle.importantPoints = summary.important_points;
+        } else { // language === 'hi'
+          const hindiSummary = await translateAndSummarizeArticleHindi({ articleTitle: articleToProcess.title, articleContent: articleToProcess.rawContent });
+          updatedArticle.titleHi = hindiSummary.translatedTitle;
+          updatedArticle.summaryHi = hindiSummary.summaryPoints.join(' ');
+          updatedArticle.importantPointsHi = hindiSummary.summaryPoints;
+        }
       } catch (e) {
           console.error("Error during summarization:", e);
           toast({ variant: 'destructive', title: 'Summarization Failed', description: e instanceof Error ? e.message : 'Could not process article.' });
-          throw e; // Re-throw to stop the process
+          return null; // Return null on failure
       }
     }
     
-    // Step 2: Generate audio from the processed text.
     const contentToRead = language === 'hi'
         ? `Title: ${updatedArticle.titleHi}. Summary: ${updatedArticle.importantPointsHi.join('. ')}`
         : `Title: ${updatedArticle.title}. Summary: ${updatedArticle.importantPoints.join('. ')}`;
 
     if (!contentToRead.trim()) {
-        throw new Error("Cannot generate audio from empty content.");
+        toast({ variant: 'destructive', title: 'Audio Generation Failed', description: 'Cannot generate audio from empty content.'});
+        return null;
     }
     
     try {
@@ -108,9 +102,8 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
     } catch (e) {
         console.error("Error during audio generation:", e);
-        // Let the flow's specific error handler create the message
         toast({ variant: 'destructive', title: 'Audio Generation Failed', description: e instanceof Error ? e.message : 'Could not generate audio.'});
-        throw e; // Re-throw
+        return null;
     }
 
     if (onArticleUpdateRef.current) {
@@ -123,7 +116,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const playArticle = useCallback(async (articleToPlay: Article, language: Language) => {
     if (isLoading) return;
     
-    if (article?.id === articleToPlay.id) {
+    if (article?.id === articleToPlay.id && isPlaying) {
         togglePlayPause();
         return;
     }
@@ -136,13 +129,17 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         let articleWithAudio = { ...articleToPlay };
         const audioUri = language === 'en' ? articleToPlay.audioDataUriEn : articleToPlay.audioDataUriHi;
         
-        // This is the core of the caching logic.
-        // If we don't have an audio URI, we generate and cache it.
         if (!audioUri) {
-            articleWithAudio = await processAndCacheArticle(articleToPlay, language);
+            const processed = await processAndCacheArticle(articleToPlay, language);
+            if (processed) {
+              articleWithAudio = processed;
+            } else {
+              // Processing failed, stop everything.
+              stop();
+              return;
+            }
         }
         
-        // At this point, articleWithAudio *should* have the URI.
         setArticle(articleWithAudio);
         
         const finalAudioUri = language === 'en' ? articleWithAudio.audioDataUriEn : articleWithAudio.audioDataUriHi;
@@ -151,17 +148,16 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             audioRef.current.src = finalAudioUri;
             await audioRef.current.play();
         } else {
-            // This case should ideally not be hit if processAndCacheArticle works.
             throw new Error("Audio data is not available even after processing.");
         }
     } catch (error) {
       console.error('Playback failed:', error);
-      // Ensure player is stopped and reset on any failure.
+      toast({ variant: 'destructive', title: 'Playback Error', description: error instanceof Error ? error.message : 'Could not play audio.' });
       stop();
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, article, processAndCacheArticle, stop, togglePlayPause]);
+  }, [isLoading, article, processAndCacheArticle, stop, togglePlayPause, isPlaying]);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !audioRef.current) {
