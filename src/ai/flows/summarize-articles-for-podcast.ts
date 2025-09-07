@@ -80,17 +80,21 @@ const summarizeArticlesForPodcastFlow = ai.defineFlow(
     outputSchema: SummarizeArticlesForPodcastOutputSchema,
   },
   async ({ articles }) => {
-    console.log(`[AI Flow - Summarize for Podcast] Starting summarization for ${articles.length} articles.`);
+    console.log(`[AI Flow - Summarize for Podcast] Starting summarization for ${articles.length} articles sequentially.`);
+    
+    const summarizedArticles: Article[] = [];
 
-    // Create an array of promises, one for each article to be summarized.
-    const summarizationPromises = articles.map(async (article: Article) => {
+    for (const article of articles) {
       try {
         // If the article has no raw content, we can't summarize it.
         if (!article.rawContent || article.rawContent.trim().length < 50) {
             console.warn(`[AI Flow - Summarize for Podcast] Skipping article "${article.title}" due to insufficient content.`);
-            return { ...article, summary: article.summary || "Summary not available." }; // Return original article with existing summary
+            // Add the original article with its existing summary
+            summarizedArticles.push({ ...article, summary: article.summary || "Summary not available." });
+            continue; 
         }
         
+        console.log(`[AI Flow - Summarize for Podcast] Processing article: "${article.title}"`);
         const { output } = await summarizationPrompt({
           title: article.title,
           content: article.rawContent,
@@ -100,19 +104,16 @@ const summarizeArticlesForPodcastFlow = ai.defineFlow(
             throw new Error(`AI returned an empty summary for article: ${article.title}`);
         }
 
-        // Return a new article object with the AI-generated summary.
-        return { ...article, summary: output.summary };
+        // Add the updated article object with the AI-generated summary.
+        summarizedArticles.push({ ...article, summary: output.summary });
 
       } catch (error) {
         console.error(`[AI Flow - Summarize for Podcast] Failed to summarize article "${article.title}".`, error);
         // If one article fails, we don't want the whole batch to fail.
-        // Return the original article with its existing summary as a fallback.
-        return { ...article, summary: article.summary || "Summary could not be generated." };
+        // Add the original article with its existing summary as a fallback.
+        summarizedArticles.push({ ...article, summary: article.summary || "Summary could not be generated." });
       }
-    });
-
-    // Wait for all the summarization promises to resolve.
-    const summarizedArticles = await Promise.all(summarizationPromises);
+    }
 
     console.log('[AI Flow - Summarize for Podcast] Finished summarizing all articles.');
     
