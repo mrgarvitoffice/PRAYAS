@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -37,22 +38,32 @@ import { Languages, Loader2, Menu, Newspaper, Podcast, Rss } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast';
 import { fetchAndProcessNews } from '@/ai/flows/fetch-and-process-news';
 import { Badge } from '@/components/ui/badge';
+import { SidebarFooter } from '@/components/ui/sidebar';
 
 export function PrayasTerminal() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filteredArticles, setFilteredArticles] = useState<Article[]>([]);
-  const [region, setRegion] = useState('India');
-  const [state, setState] = useState('All India');
-  const [city, setCity] = useState('All');
-  const [category, setCategory] = useState('All');
+
+  // States for active filters
+  const [activeRegion, setActiveRegion] = useState('India');
+  const [activeState, setActiveState] = useState('All India');
+  const [activeCity, setActiveCity] = useState('All');
+  const [activeCategory, setActiveCategory] = useState('All');
+
+  // States for pending filter selections
+  const [pendingRegion, setPendingRegion] = useState('India');
+  const [pendingState, setPendingState] = useState('All India');
+  const [pendingCity, setPendingCity] = useState('All');
+  const [pendingCategory, setPendingCategory] = useState('All');
+
   const [language, setLanguage] = useState<Language>('en');
   const [podcastList, setPodcastList] = useState<Article[]>([]);
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
   const { toast } = useToast();
 
-  const states = useMemo(() => Object.keys(locationData[region] ? locationData[region].states : {}), [region]);
-  const cities = useMemo(() => (region === 'India' && state && locationData.India.states[state]) ? locationData.India.states[state] : [], [region, state]);
+  const states = useMemo(() => Object.keys(locationData[pendingRegion] ? locationData[pendingRegion].states : {}), [pendingRegion]);
+  const cities = useMemo(() => (pendingRegion === 'India' && pendingState && locationData.India.states[pendingState]) ? locationData.India.states[pendingState] : [], [pendingRegion, pendingState]);
   
   const loadNews = useCallback(async () => {
     setIsLoading(true);
@@ -80,40 +91,46 @@ export function PrayasTerminal() {
     loadNews();
   }, [loadNews]);
 
-
+  const applyFilters = () => {
+    setActiveRegion(pendingRegion);
+    setActiveState(pendingState);
+    setActiveCity(pendingCity);
+    setActiveCategory(pendingCategory);
+  };
+  
   useEffect(() => {
     let result = articles;
 
     // The filtering logic below is kept for when the API provides this data
-    if (region !== 'World') {
+    if (activeRegion !== 'World') {
       result = result.filter(a => a.country === 'India');
-      if (state && state !== 'All India') {
-        result = result.filter(a => a.state === state);
-        if (city && city !== 'All') {
-          result = result.filter(a => a.city === city);
+      if (activeState && activeState !== 'All India') {
+        result = result.filter(a => a.state === activeState);
+        if (activeCity && activeCity !== 'All') {
+          result = result.filter(a => a.city === activeCity);
         }
       }
     } else {
       result = result.filter(a => a.country !== 'India');
     }
 
-    if (category && category !== 'All') {
+    if (activeCategory && activeCategory !== 'All') {
       // newsdata.io returns an array of categories. We check if our selected one is present.
-      result = result.filter(a => a.category.toLowerCase().includes(category.toLowerCase()));
+      result = result.filter(a => a.category.toLowerCase().includes(activeCategory.toLowerCase()));
     }
 
     setFilteredArticles(result);
-  }, [region, state, city, category, articles]);
+  }, [activeRegion, activeState, activeCity, activeCategory, articles]);
 
   const handleRegionChange = (value: string) => {
-    setRegion(value);
-    setState(value === 'India' ? 'All India' : '');
-    setCity('All');
+    setPendingRegion(value);
+    setPendingState(value === 'India' ? 'All India' : 'All');
+    setPendingCity('All');
   };
 
   const handleStateChange = (value: string) => {
-    setState(value);
-    setCity('All');
+    setPendingState(value);
+    setPendingCity('All');
   };
 
   const addToPodcast = (article: Article) => {
@@ -147,7 +164,7 @@ export function PrayasTerminal() {
         <ScrollArea>
           <SidebarGroup>
             <label className="text-sm font-medium">Region</label>
-            <Select value={region} onValueChange={handleRegionChange}>
+            <Select value={pendingRegion} onValueChange={handleRegionChange}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="India">India</SelectItem>
@@ -157,7 +174,7 @@ export function PrayasTerminal() {
           </SidebarGroup>
           <SidebarGroup>
             <label className="text-sm font-medium">State</label>
-            <Select value={state} onValueChange={handleStateChange} disabled={region !== 'India'}>
+            <Select value={pendingState} onValueChange={handleStateChange} disabled={pendingRegion !== 'India'}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {states.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
@@ -166,7 +183,7 @@ export function PrayasTerminal() {
           </SidebarGroup>
           <SidebarGroup>
             <label className="text-sm font-medium">City</label>
-            <Select value={city} onValueChange={setCity} disabled={!cities || cities.length === 0}>
+            <Select value={pendingCity} onValueChange={setPendingCity} disabled={!cities || cities.length === 0}>
               <SelectTrigger><SelectValue placeholder="Select City" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="All">All Cities</SelectItem>
@@ -176,7 +193,7 @@ export function PrayasTerminal() {
           </SidebarGroup>
           <SidebarGroup>
             <label className="text-sm font-medium">Category</label>
-            <Select value={category} onValueChange={setCategory}>
+            <Select value={pendingCategory} onValueChange={setPendingCategory}>
               <SelectTrigger><SelectValue placeholder="All Categories" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="All">All Categories</SelectItem>
@@ -192,6 +209,9 @@ export function PrayasTerminal() {
           </SidebarGroup>
         </ScrollArea>
       </SidebarContent>
+      <SidebarFooter>
+        <Button onClick={applyFilters} className="w-full">Apply Filters</Button>
+      </SidebarFooter>
     </>
   );
 
@@ -205,8 +225,8 @@ export function PrayasTerminal() {
           <header className="sticky top-0 z-40 w-full border-b bg-background">
             <div className="container mx-auto flex h-16 items-center justify-between px-4">
               <div className="flex items-center gap-2">
-                <SidebarTrigger asChild>
-                  <Button variant="ghost" size="icon"><Menu/></Button>
+                <SidebarTrigger>
+                  <Menu/>
                 </SidebarTrigger>
                 <Logo />
               </div>
