@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { articles as allArticles, locationData } from '@/lib/data';
+import { locationData } from '@/lib/data';
 import type { Article, Language } from '@/lib/types';
 import { NewsCard } from './news-card';
 import { Button } from './ui/button';
@@ -43,19 +43,16 @@ import { SidebarFooter } from '@/components/ui/sidebar';
 export function PrayasTerminal() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filteredArticles, setFilteredArticles] = useState<Article[]>([]);
 
   // States for active filters
   const [activeRegion, setActiveRegion] = useState('India');
-  const [activeState, setActiveState] = useState('All India');
-  const [activeCity, setActiveCity] = useState('All');
   const [activeCategory, setActiveCategory] = useState('All');
 
-  // States for pending filter selections
-  const [pendingRegion, setPendingRegion] = useState('India');
-  const [pendingState, setPendingState] = useState('All India');
+  // States for pending filter selections in sidebar
+  const [pendingRegion, setPendingRegion] = useState(activeRegion);
+  const [pendingState, setPendingState]_useState('All India');
   const [pendingCity, setPendingCity] = useState('All');
-  const [pendingCategory, setPendingCategory] = useState('All');
+  const [pendingCategory, setPendingCategory] = useState(activeCategory);
 
   const [language, setLanguage] = useState<Language>('en');
   const [podcastList, setPodcastList] = useState<Article[]>([]);
@@ -64,11 +61,11 @@ export function PrayasTerminal() {
 
   const states = useMemo(() => Object.keys(locationData[pendingRegion] ? locationData[pendingRegion].states : {}), [pendingRegion]);
   const cities = useMemo(() => (pendingRegion === 'India' && pendingState && locationData.India.states[pendingState]) ? locationData.India.states[pendingState] : [], [pendingRegion, pendingState]);
-  
+
   const loadNews = useCallback(async (category: string, region: string) => {
     setIsLoading(true);
     try {
-      const countryCode = region === 'World' ? 'us' : 'in'; // Simplified logic
+      const countryCode = region === 'World' ? 'us' : 'in';
       const fetchedArticles = await fetchAndProcessNews({ category, country: countryCode });
       setArticles(fetchedArticles);
     } catch (error) {
@@ -78,47 +75,23 @@ export function PrayasTerminal() {
         title: 'Failed to load news',
         description: 'Could not fetch the latest articles. Please try again later.',
       });
-      // Fallback to mock data on error
-      setArticles(allArticles);
+       setArticles([]);
     } finally {
       setIsLoading(false);
     }
   }, [toast]);
 
   useEffect(() => {
-    // Initial load
     loadNews(activeCategory, activeRegion);
-  }, []);
+  }, [activeCategory, activeRegion, loadNews]);
 
   const applyFilters = () => {
     setActiveRegion(pendingRegion);
-    setActiveState(pendingState);
-    setActiveCity(pendingCity);
     setActiveCategory(pendingCategory);
-    loadNews(pendingCategory, pendingRegion);
+    // State/City filters are not yet supported by the backend, but are kept for future use.
+    // setActiveState(pendingState);
+    // setActiveCity(pendingCity);
   };
-  
-  useEffect(() => {
-    let result = articles;
-
-    // The filtering logic below is kept for when the API provides this data
-    if (activeRegion !== 'World') {
-      if (activeState && activeState !== 'All India') {
-        result = result.filter(a => a.state === activeState);
-        if (activeCity && activeCity !== 'All') {
-          result = result.filter(a => a.city === activeCity);
-        }
-      }
-    } 
-
-    // Category is now filtered at the API level, so we just display what we get.
-    // However, if we fall back to mock data, this client-side filter is useful.
-    if (activeCategory && activeCategory !== 'All') {
-      result = result.filter(a => a.category.toLowerCase().includes(activeCategory.toLowerCase()));
-    }
-
-    setFilteredArticles(result);
-  }, [activeRegion, activeState, activeCity, activeCategory, articles]);
 
   const handleRegionChange = (value: string) => {
     setPendingRegion(value);
@@ -268,9 +241,9 @@ export function PrayasTerminal() {
                   <h2 className="text-2xl font-bold font-headline mb-2">Fetching Latest News...</h2>
                   <p className="text-muted-foreground">Please wait while we gather and process the articles for you.</p>
               </div>
-            ) : filteredArticles.length > 0 ? (
+            ) : articles.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {filteredArticles.map(article => (
+                {articles.map(article => (
                   <NewsCard key={article.id} article={article} language={language} onAddToPodcast={addToPodcast} />
                 ))}
               </div>
