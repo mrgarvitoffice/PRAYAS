@@ -42,7 +42,7 @@ export function PrayasTerminal() {
   const [region, setRegion] = useState('India');
   const [state, setState] = useState('All India');
   const [city, setCity] = useState('All');
-  const [category, setCategory] = useState('');
+  const [category, setCategory] = useState('All');
   const [language, setLanguage] = useState<Language>('en');
   const [podcastList, setPodcastList] = useState<Article[]>([]);
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
@@ -66,7 +66,7 @@ export function PrayasTerminal() {
       result = result.filter(a => a.country === 'World');
     }
 
-    if (category) {
+    if (category && category !== 'All') {
       result = result.filter(a => a.category === category);
     }
 
@@ -111,7 +111,7 @@ export function PrayasTerminal() {
       <SidebarHeader>
         <h2 className="text-lg font-semibold font-headline">Filters</h2>
       </SidebarHeader>
-      <SidebarContent asChild>
+      <SidebarContent>
         <ScrollArea>
           <SidebarGroup>
             <label className="text-sm font-medium">Region</label>
@@ -147,7 +147,7 @@ export function PrayasTerminal() {
             <Select value={category} onValueChange={setCategory}>
               <SelectTrigger><SelectValue placeholder="All Categories" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Categories</SelectItem>
+                <SelectItem value="All">All Categories</SelectItem>
                 <SelectItem value="Science">Science</SelectItem>
                 <SelectItem value="Politics">Politics</SelectItem>
                 <SelectItem value="Economy">Economy</SelectItem>
