@@ -99,7 +99,7 @@ const NewsApp = () => {
       const article = playlistRef.current[nextIndex];
       const lang = filters.language;
       const title = lang === 'hi' && article.titleHi ? article.titleHi : article.title;
-      const points = lang === 'hi' && article.importantPointsHi.length ? article.importantPointsHi : article.importantPoints;
+      const points = lang === 'hi' && article.importantPointsHi.length > 0 ? article.importantPointsHi : article.importantPoints;
   
       try {
         const result = await generateTTSAudioClip({
@@ -199,7 +199,7 @@ const NewsApp = () => {
     }
   }, [processAndSetNews]);
 
-  const handleFilterChange = (filterType: string, value: string) => {
+  const handleFilterChange = useCallback((filterType: string, value: string) => {
     setFilters(prev => {
       const newFilters = { ...prev, [filterType]: value };
       if (filterType === 'region') {
@@ -210,7 +210,7 @@ const NewsApp = () => {
       }
       return newFilters;
     });
-  };
+  }, []);
 
   const clearFilters = () => {
     setFilters({
@@ -229,11 +229,7 @@ const NewsApp = () => {
   }, [filters.state, filters.region]);
 
   useEffect(() => {
-    const handler = setTimeout(() => {
-      fetchNewsCallback(filters);
-    }, 500); // Debounce API calls
-
-    return () => clearTimeout(handler);
+    fetchNewsCallback(filters);
   }, [filters, fetchNewsCallback]);
   
   const addToPodcast = (article: Article) => {
@@ -538,5 +534,7 @@ export default function Home() {
   // The page is now a simple wrapper around NewsApp
   return <NewsApp />;
 }
+
+    
 
     

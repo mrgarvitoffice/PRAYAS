@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview This file defines a Genkit flow for generating TTS audio clips from article headlines and key points.
@@ -67,7 +68,7 @@ const generateTTSAudioClipFlow = ai.defineFlow({
     } = input;
 
     // Construct the prompt for TTS, now it can be a single description or multiple points
-    const contentToRead = importantPoints.join(' ');
+    const contentToRead = importantPoints.join('. ');
     const promptText = `${title}. ${contentToRead}`;
 
     const {
@@ -101,3 +102,5 @@ const generateTTSAudioClipFlow = ai.defineFlow({
     };
   }
 );
+
+    
