@@ -1,3 +1,5 @@
+'use server';
+
 /**
  * @fileOverview A service for fetching news articles from the NewsData.io API.
  */
@@ -31,14 +33,14 @@ export async function fetchNews(
   if (country) {
     params.country = country.toLowerCase();
   }
-  
+
   // Newsdata.io requires either `q` or `category` when `country` is specified.
   if (category && category.toLowerCase() !== 'all') {
     params.category = category.toLowerCase();
   } else {
-    params.q = 'top news';
+    // Use a general query if no specific category is selected, as required by the API when a country is present.
+    params.q = 'top'; 
   }
-
 
   const url = `${API_BASE_URL}?${new URLSearchParams(params).toString()}`;
 
