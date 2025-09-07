@@ -3,7 +3,7 @@
 
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import type { Article, Language } from '@/lib/types';
-import { generateDiscussionAudio } from '@/ai/flows/generate-discussion-audio';
+import { generateSingleSpeakerAudio } from '@/ai/flows/generate-single-speaker-audio';
 import { summarizeArticle } from '@/ai/flows/summarize-article';
 import { translateAndSummarizeArticleHindi } from '@/ai/flows/translate-and-summarize-article-hindi';
 import { useToast } from '@/hooks/use-toast';
@@ -93,8 +93,8 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
     
     try {
-        toast({ title: "Generating AI discussion...", description: "This might take a moment." });
-        const result = await generateDiscussionAudio({ content: contentToRead, language });
+        toast({ title: "Generating audio...", description: "This might take a moment." });
+        const result = await generateSingleSpeakerAudio({ content: contentToRead, language });
         if (language === 'en') {
           updatedArticle.audioDataUriEn = result.audioDataUri;
         } else {
@@ -102,7 +102,11 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
     } catch (e) {
         console.error("Error during audio generation:", e);
-        toast({ variant: 'destructive', title: 'Audio Generation Failed', description: e instanceof Error ? e.message : 'Could not generate audio.'});
+        let errorMessage = e instanceof Error ? e.message : 'Could not generate audio.';
+        if (errorMessage.includes('429')) {
+          errorMessage = 'You have exceeded the daily limit for audio generation. Please try again tomorrow.';
+        }
+        toast({ variant: 'destructive', title: 'Audio Generation Failed', description: errorMessage});
         return null;
     }
 
