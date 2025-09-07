@@ -89,7 +89,7 @@ async function processArticle(
       city: null,
       category: article.category[0] || 'General',
       media: {
-        image: article.image_url || `https://picsum.photos/600/400?random=${article.article_id}`,
+        image: `https://picsum.photos/600/400?random=${article.article_id}`,
       },
       rank_score: 90, // Placeholder
     };
