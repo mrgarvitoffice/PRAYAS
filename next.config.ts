@@ -82,6 +82,12 @@ const nextConfig: NextConfig = {
         hostname: 'www.tribuneindia.com',
         port: '',
         pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'media.tegna-media.com',
+        port: '',
+        pathname: '/**',
       }
     ],
   },
