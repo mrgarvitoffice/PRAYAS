@@ -584,7 +584,7 @@ const NewsApp = () => {
                       <div className="bg-slate-50 dark:bg-slate-800 p-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700/50">
                         <div className="flex items-center gap-2">
                           <button onClick={() => audioPlayer.playArticle(article, filters.language)} disabled={isLoading || isSpeakingHeadlines} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Listen to Article">
-                              {isLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Headphones className="w-5 h-5"/>}
+                              {isCurrentlyPlaying ? <Pause className="w-5 h-5"/> : isLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Headphones className="w-5 h-5"/>}
                           </button>
                           {needsProcessing && !hasAudio && (
                             <Tooltip>

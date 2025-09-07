@@ -157,7 +157,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, article, processAndCacheArticle, stop, togglePlayPause, isPlaying]);
+  }, [isLoading, article, processAndCacheArticle, stop, togglePlayPause, isPlaying, toast]);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !audioRef.current) {

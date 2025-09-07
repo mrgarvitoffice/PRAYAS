@@ -5,13 +5,13 @@ import { useAudioPlayer } from '@/context/audio-player-context';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Pause, Play, X } from 'lucide-react';
+import { Pause, Play, X, Loader2 } from 'lucide-react';
 import type { Language } from '@/lib/types';
 
 export function AudioPlayer({ language }: { language: Language }) {
-  const { article, isPlaying, progress, togglePlayPause, stop, seek } = useAudioPlayer();
+  const { article, isPlaying, isLoading, progress, togglePlayPause, stop, seek } = useAudioPlayer();
 
-  if (!article) {
+  if (!article && !isLoading) {
     return null;
   }
 
@@ -23,20 +23,21 @@ export function AudioPlayer({ language }: { language: Language }) {
     seek(newProgress);
   };
   
-  const title = language === 'hi' && article.titleHi ? article.titleHi : article.title;
+  const title = article ? (language === 'hi' && article.titleHi ? article.titleHi : article.title) : "Loading Article...";
+  const sourceName = article ? article.source.name : 'Please wait';
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 p-4 backdrop-blur-sm transition-transform duration-300 ease-in-out"
-         style={{ transform: `translateY(${article ? '0%' : '100%'})` }}>
+         style={{ transform: `translateY(${article || isLoading ? '0%' : '100%'})` }}>
       <Card className="max-w-4xl mx-auto p-4 shadow-2xl bg-white/80 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={togglePlayPause}>
-            {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
+          <Button variant="ghost" size="icon" onClick={togglePlayPause} disabled={!article || isLoading}>
+            {isLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
             <span className="sr-only">{isPlaying ? 'Pause' : 'Play'}</span>
           </Button>
           <div className="flex-1 overflow-hidden">
             <p className="font-bold truncate font-headline">{title}</p>
-            <p className="text-sm text-muted-foreground">{article.source.name}</p>
+            <p className="text-sm text-muted-foreground">{sourceName}</p>
             <div className="mt-2" onClick={handleProgressClick} >
               <Progress value={progress} className="h-2 cursor-pointer" />
             </div>
