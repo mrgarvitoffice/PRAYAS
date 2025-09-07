@@ -30,15 +30,14 @@ export async function fetchNews(
     size: size.toString(),
   };
 
-  if (country) {
-    params.country = country.toLowerCase();
-  }
-
-  // Newsdata.io requires either `q` or `category` when `country` is specified.
+  // Set country, default to 'in' if not provided
+  params.country = country.toLowerCase() || 'in';
+  
+  // Newsdata.io requires either `q` or `category` when `country` is specified, but not both.
   if (category && category.toLowerCase() !== 'all') {
     params.category = category.toLowerCase();
   } else {
-    // Use a general query if no specific category is selected, as required by the API when a country is present.
+    // Use a general query if no specific category is selected
     params.q = 'top'; 
   }
 
