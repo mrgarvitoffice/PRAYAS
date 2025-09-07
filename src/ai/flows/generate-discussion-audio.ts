@@ -38,7 +38,7 @@ export async function generateDiscussionAudio(input: GenerateDiscussionAudioInpu
     } else if (errorMessage.includes('429')) {
       errorMessage = 'You have exceeded the daily limit for audio generation. Please try again tomorrow.';
     }
-    throw new Error(`${errorMessage}`);
+    throw new Error(errorMessage);
   }
 }
 

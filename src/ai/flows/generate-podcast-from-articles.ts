@@ -39,7 +39,7 @@ export async function generatePodcastFromArticles(input: GeneratePodcastFromArti
        errorMessage = "The AI failed to create a podcast script from the provided articles. This can sometimes happen if the content is too short or complex.";
     }
     // Pass a clear, user-friendly error message.
-    throw new Error(`${errorMessage}`);
+    throw new Error(errorMessage);
   }
 }
 
