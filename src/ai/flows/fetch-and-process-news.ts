@@ -106,8 +106,8 @@ const fetchAndProcessNewsFlow = ai.defineFlow(
     outputSchema: FetchAndProcessNewsOutputSchema,
   },
   async ({ category, country }) => {
-    const newsResponse = await fetchNews(category, country);
-    const articles = newsResponse.results.slice(0, 11);
+    const newsResponse = await fetchNews(category, country, 11);
+    const articles = newsResponse.results;
 
     const processingPromises = articles.map(processArticle);
     const processedArticles = await Promise.all(processingPromises);

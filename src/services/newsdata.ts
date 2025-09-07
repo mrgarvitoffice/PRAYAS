@@ -9,11 +9,13 @@ const API_BASE_URL = 'https://newsdata.io/api/1/news';
  * Fetches news articles from the NewsData.io API.
  * @param query The search query for articles.
  * @param country The country to fetch news from.
+ * @param size The number of articles to fetch.
  * @returns A promise that resolves to the API response.
  */
 export async function fetchNews(
   query: string = 'top',
-  country: string = 'in' // Default to India
+  country: string = 'in',
+  size: number = 11
 ): Promise<NewsDataResponse> {
   const apiKey = process.env.NEWSDATA_API_KEY;
   if (!apiKey) {
@@ -23,6 +25,7 @@ export async function fetchNews(
   const params: Record<string, string> = {
     apikey: apiKey,
     language: 'en',
+    size: size.toString(),
   };
 
   if (query && query.toLowerCase() !== 'all') {
