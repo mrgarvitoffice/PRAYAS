@@ -376,8 +376,13 @@ const NewsApp = () => {
 
     const textsToSpeak = visibleNews.map(a => {
         const title = filters.language === 'hi' && a.titleHi ? a.titleHi : a.title;
-        const summary = filters.language === 'hi' && a.summaryHi ? a.summaryHi : a.summary;
-        return `${title}. ${summary}`;
+        if (filters.language === 'hi') {
+          const summary = a.summaryHi ? a.summaryHi : a.summary;
+          return `${title}. ${summary}`;
+        } else {
+          const points = a.importantPoints.length > 0 ? a.importantPoints.join('. ') : a.summary;
+          return `${title}. ${points}`;
+        }
       }).filter(Boolean);
 
     if (textsToSpeak.length === 0) {
@@ -385,8 +390,10 @@ const NewsApp = () => {
       return;
     }
 
-    const langCode = 'hi-IN'; // Always use Hindi voice
-    const bestVoice = voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('google')) ||
+    const langCode = filters.language === 'hi' ? 'hi-IN' : 'en-IN';
+    const femaleVoice = voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('female'));
+    const bestVoice = femaleVoice ||
+                      voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('google')) ||
                       voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('natural')) ||
                       voices.find(v => v.lang === langCode && v.localService) ||
                       voices.find(v => v.lang === langCode);
@@ -456,10 +463,10 @@ const NewsApp = () => {
 
     window.speechSynthesis.cancel(); // Clear any previous speech
 
-    const langCode = filters.language === 'hi' ? 'hi-IN' : 'en-US';
+    const langCode = filters.language === 'hi' ? 'hi-IN' : 'en-IN';
     const allVoices = window.speechSynthesis.getVoices().filter(v => v.lang === langCode);
     const voice1 = allVoices.find(v => v.name.toLowerCase().includes('google')) || allVoices[0];
-    const voice2 = allVoices.find(v => v.name.toLowerCase().includes('natural')) || allVoices[1] || allVoices[0];
+    const voice2 = allVoices.find(v => v.name.toLowerCase().includes('natural') || v.name.toLowerCase().includes('female')) || allVoices[1] || allVoices[0];
 
     const lines = generatedPodcastScript.split('\n').filter(line => line.startsWith('Speaker1:') || line.startsWith('Speaker2:'));
     const utterances = lines.map((line, index) => {
