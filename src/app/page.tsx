@@ -296,16 +296,9 @@ const NewsApp = () => {
         duration: 5000,
     });
     try {
-        const textToRead = article.description || article.content || '';
-        if (!textToRead) {
-            throw new Error("Article content is not available to read.");
-        }
-
-        // We are not generating a summary here, just using the description.
-        // The importantPoints will be the single description string.
         const ttsResult = await generateTTSAudioClip({
             title: article.title,
-            importantPoints: [textToRead], // Pass description as the single "important point"
+            importantPoints: [], // Only read the headline
             language: filters.language === 'hi' ? 'hi-IN' : 'en-IN',
         });
         
@@ -685,3 +678,4 @@ export default function Home() {
 }
 
     
+
