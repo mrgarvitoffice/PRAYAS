@@ -361,11 +361,12 @@ const NewsApp = () => {
   }
   
   const renderArticleDescription = (article) => {
+    const description = article.description || '';
     // Placeholder for language switching.
     if (filters.language === 'hi') {
-      return `(हिं) ${article.description}`;
+      return `(हिं) ${description}`;
     }
-    return article.description;
+    return description;
   }
 
   return (
@@ -559,7 +560,7 @@ const NewsApp = () => {
                     )}
                   </div>
                   <p className="text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-3">
-                    {renderArticleDescription(article.description)}
+                    {renderArticleDescription(article)}
                   </p>
                 </div>
               </div>
@@ -670,3 +671,5 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
+
+    
