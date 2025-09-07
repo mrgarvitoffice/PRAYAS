@@ -93,7 +93,7 @@ async function processArticle(
       city: null,
       category: article.category[0] || 'General',
       media: {
-        image: `https://picsum.photos/600/400?random=${article.article_id}`,
+        image: article.image_url || `https://picsum.photos/600/400?random=${article.article_id}`,
       },
       rank_score: 90, // Placeholder
     };
@@ -111,9 +111,7 @@ const fetchAndProcessNewsFlow = ai.defineFlow(
   },
   async ({ category, country }) => {
     const newsResponse = await fetchNews(category, country);
-    // The free tier of newsdata.io returns 10 articles by default.
-    // We'll take the first 8 as requested.
-    const articles = (newsResponse.results || []).slice(0, 8);
+    const articles = newsResponse.results || [];
 
     const processingPromises = articles.map(processArticle);
     const processedArticles = await Promise.all(processingPromises);
