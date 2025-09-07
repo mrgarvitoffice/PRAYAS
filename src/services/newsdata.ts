@@ -24,39 +24,62 @@ export async function fetchNews(
     throw new Error('NEWSDATA_API_KEY is not set in environment variables.');
   }
 
-  const params: Record<string, string> = {
+  const params = new URLSearchParams({
     apikey: apiKey,
     language: 'en',
     size: size.toString(),
-  };
+  });
 
-  // Set country, default to 'in' if not provided
-  params.country = country.toLowerCase() || 'in';
-
-  // Newsdata.io requires either `q` or `category` when `country` is specified, but not both.
-  // This logic ensures we only send one or the other.
+  // newsdata.io requires `q` or `category` but not both.
   if (category && category.toLowerCase() !== 'all') {
-    params.category = category.toLowerCase();
+    params.set('category', category.toLowerCase());
   } else {
     // Use a general query if no specific category is selected
-    params.q = 'top';
+    params.set('q', 'top');
   }
 
+  params.set('country', country.toLowerCase() || 'in');
 
-  const url = `${API_BASE_URL}?${new URLSearchParams(params).toString()}`;
+
+  const url = `${API_BASE_URL}?${params.toString()}`;
 
   try {
     console.log(`Fetching news from: ${url.replace(apiKey, 'REDACTED')}`);
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (compatible; PrayasNewsApp/1.0)',
+      },
+    });
+
+    console.log('Response status:', response.status);
+
     if (!response.ok) {
-        const errorBody = await response.text();
-        console.error('API Error Response:', errorBody);
-        throw new Error(`API request failed with status ${response.status}`);
+        const errorText = await response.text();
+        console.error('API Error Response:', errorText);
+        try {
+            const errorJson = JSON.parse(errorText);
+            // Accessing the results field which may contain the error message
+            const errorMessage = (errorJson.results && errorJson.results.message) || errorJson.message || errorText;
+            throw new Error(`API Error (${response.status}): ${errorMessage}`);
+        } catch (parseError) {
+            throw new Error(`API Error (${response.status}): ${errorText}`);
+        }
     }
+
     const data: NewsDataResponse = await response.json();
+
+    if (!data.results) {
+      throw new Error('Invalid response structure: missing results array');
+    }
+    
+    console.log(`Successfully fetched ${data.results.length} articles`);
     return data;
+
   } catch (error) {
-    console.error('Failed to fetch news:', error);
+    console.error('fetchNews error:', error);
+    // Re-throw the error to be handled by the calling flow
     throw error;
   }
 }
