@@ -7,13 +7,13 @@ const API_BASE_URL = 'https://newsdata.io/api/1/news';
 
 /**
  * Fetches news articles from the NewsData.io API.
- * @param query The search query for articles.
+ * @param category The search category for articles.
  * @param country The country to fetch news from.
  * @param size The number of articles to fetch.
  * @returns A promise that resolves to the API response.
  */
 export async function fetchNews(
-  query: string = 'top',
+  category: string = 'top',
   country: string = 'in',
   size: number = 11
 ): Promise<NewsDataResponse> {
@@ -26,22 +26,20 @@ export async function fetchNews(
     apikey: apiKey,
     language: 'en',
     size: size.toString(),
+    country: country.toLowerCase(),
   };
   
-  if (country) {
-    params.country = country.toLowerCase();
-  }
-
-  if (query && query.toLowerCase() !== 'all') {
-    params.category = query.toLowerCase();
+  if (category && category.toLowerCase() !== 'all') {
+    params.category = category.toLowerCase();
   } else {
-    params.q = 'top';
+    // newsdata.io requires a query `q` if category is not specified
+    params.q = 'top news';
   }
-
 
   const url = `${API_BASE_URL}?${new URLSearchParams(params).toString()}`;
 
   try {
+    console.log(`Fetching news from: ${url.replace(apiKey, 'REDACTED')}`);
     const response = await fetch(url);
     if (!response.ok) {
         const errorBody = await response.text();

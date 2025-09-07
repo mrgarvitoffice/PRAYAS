@@ -53,7 +53,11 @@ async function processArticle(
 ): Promise<Article | null> {
   try {
     const fullText = article.content || article.description || '';
-    if (!article.title || !fullText) return null;
+    // Skip articles that have no title or content to process
+    if (!article.title || !fullText) {
+      console.warn(`Skipping article ${article.article_id} due to missing title or content.`);
+      return null;
+    }
 
     // Summarize in English
     const englishSummary = await summarizeArticle({
@@ -89,6 +93,7 @@ async function processArticle(
       city: null,
       category: article.category[0] || 'General',
       media: {
+        // Always use a placeholder to avoid next/image domain errors
         image: `https://picsum.photos/600/400?random=${article.article_id}`,
       },
       rank_score: 90, // Placeholder
@@ -107,11 +112,12 @@ const fetchAndProcessNewsFlow = ai.defineFlow(
   },
   async ({ category, country }) => {
     const newsResponse = await fetchNews(category, country, 11);
-    const articles = newsResponse.results;
+    const articles = newsResponse.results || [];
 
     const processingPromises = articles.map(processArticle);
     const processedArticles = await Promise.all(processingPromises);
 
+    // Filter out any null results from processing
     return processedArticles.filter((a): a is Article => a !== null);
   }
 );
