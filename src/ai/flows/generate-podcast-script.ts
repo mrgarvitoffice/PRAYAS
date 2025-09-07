@@ -33,8 +33,16 @@ const generatePodcastScriptFlow = ai.defineFlow({
 }, async ({ articles, language }) => {
 
   const getArticleContent = (article: Article) => {
-    const englishContent = `Title: ${article.title}. Summary: ${article.importantPoints.join('. ') || article.summary}`;
-    const hindiContent = `Title: ${article.titleHi}. Summary: ${article.importantPointsHi.join('. ') || article.summaryHi}`;
+    // Use important points if available, otherwise fallback to the summary.
+    const englishSummaryContent = (article.importantPoints && article.importantPoints.length > 0)
+        ? article.importantPoints.join('. ')
+        : article.summary;
+    const hindiSummaryContent = (article.importantPointsHi && article.importantPointsHi.length > 0)
+        ? article.importantPointsHi.join('. ')
+        : article.summaryHi;
+
+    const englishContent = `Title: ${article.title}. Summary: ${englishSummaryContent}`;
+    const hindiContent = `Title: ${article.titleHi}. Summary: ${hindiSummaryContent}`;
     
     if (language === 'en') return englishContent;
     if (language === 'hi') return hindiContent;
