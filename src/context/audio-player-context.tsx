@@ -55,16 +55,19 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const processAndCacheArticle = useCallback(async (articleToProcess: Article, language: Language): Promise<Article> => {
     let updatedArticle = { ...articleToProcess };
-    const needsSummarization = (language === 'en' && !articleToProcess.importantPoints?.length) || (language === 'hi' && !articleToProcess.titleHi);
+    
+    // Step 1: Ensure article has summary and important points in the required language.
+    // This is the "on-demand" text processing part.
+    const needsEnglishProcessing = language === 'en' && articleToProcess.importantPoints.length === 0;
+    const needsHindiProcessing = language === 'hi' && (!articleToProcess.titleHi || articleToProcess.importantPointsHi.length === 0);
 
-    if (needsSummarization) {
+    if (needsEnglishProcessing || needsHindiProcessing) {
       toast({
         title: "Generating Smart Summary...",
-        description: `Processing "${articleToProcess.title}"`,
+        description: `Processing "${articleToProcess.title.slice(0, 50)}..."`,
       });
       
       try {
-        // Always generate both summaries to have them ready
         const [englishSummary, hindiSummary] = await Promise.all([
             summarizeArticle({ title: articleToProcess.title, full_text: articleToProcess.rawContent }),
             translateAndSummarizeArticleHindi({ articleTitle: articleToProcess.title, articleContent: articleToProcess.rawContent })
@@ -86,6 +89,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     }
     
+    // Step 2: Generate audio from the processed text.
     const contentToRead = language === 'hi'
         ? `Title: ${updatedArticle.titleHi}. Summary: ${updatedArticle.importantPointsHi.join('. ')}`
         : `Title: ${updatedArticle.title}. Summary: ${updatedArticle.importantPoints.join('. ')}`;
@@ -104,11 +108,8 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
     } catch (e) {
         console.error("Error during audio generation:", e);
-        let errorMessage = e instanceof Error ? e.message : 'Could not generate audio.';
-        if (errorMessage.includes('429')) {
-          errorMessage = 'The daily limit for audio generation has been reached. Please try again tomorrow.';
-        }
-        toast({ variant: 'destructive', title: 'Audio Generation Failed', description: errorMessage });
+        // Let the flow's specific error handler create the message
+        toast({ variant: 'destructive', title: 'Audio Generation Failed', description: e instanceof Error ? e.message : 'Could not generate audio.'});
         throw e; // Re-throw
     }
 
@@ -135,10 +136,13 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
         let articleWithAudio = { ...articleToPlay };
         const audioUri = language === 'en' ? articleToPlay.audioDataUriEn : articleToPlay.audioDataUriHi;
         
+        // This is the core of the caching logic.
+        // If we don't have an audio URI, we generate and cache it.
         if (!audioUri) {
             articleWithAudio = await processAndCacheArticle(articleToPlay, language);
         }
         
+        // At this point, articleWithAudio *should* have the URI.
         setArticle(articleWithAudio);
         
         const finalAudioUri = language === 'en' ? articleWithAudio.audioDataUriEn : articleWithAudio.audioDataUriHi;
@@ -147,10 +151,12 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             audioRef.current.src = finalAudioUri;
             await audioRef.current.play();
         } else {
-            throw new Error("Audio data is not available.");
+            // This case should ideally not be hit if processAndCacheArticle works.
+            throw new Error("Audio data is not available even after processing.");
         }
     } catch (error) {
       console.error('Playback failed:', error);
+      // Ensure player is stopped and reset on any failure.
       stop();
     } finally {
       setIsLoading(false);
