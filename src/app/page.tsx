@@ -70,7 +70,6 @@ const NewsApp = () => {
   const { toast } = useToast();
 
   // Podcast State
-  const [podcastList, setPodcastList] = useState([]);
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
   const [podcastLanguage, setPodcastLanguage] = useState('en');
 
@@ -279,24 +278,14 @@ const NewsApp = () => {
   }, []);
   
   // Podcast handlers
-  const handleAddToPodcast = (article) => {
-    if (!podcastList.find(p => p.article_id === article.article_id)) {
-        setPodcastList(prev => [...prev, article]);
-        toast({
-            title: "Added to Podcast",
-            description: `"${article.title}" has been added to your episode.`,
-        });
-    }
-  };
-
   const handleCreatePodcast = () => {
-    if (podcastList.length > 0) {
+    if (news.length > 0) {
         setIsPodcastModalOpen(true);
     } else {
         toast({
             variant: "destructive",
-            title: "No Articles Selected",
-            description: "Please add articles to your podcast episode first.",
+            title: "No Articles to Create a Podcast",
+            description: "Please load some news articles first.",
         });
     }
   }
@@ -399,10 +388,10 @@ const NewsApp = () => {
   
   const currentPlayingTitle = useMemo(() => {
     if (!audioState.currentArticleId) return "No audio playing";
-    const article = news.find(a => a.article_id === audioState.currentArticleId) || podcastList.find(a => a.article_id === audioState.currentArticleId);
+    const article = news.find(a => a.article_id === audioState.currentArticleId);
     if (!article) return "Loading title...";
     return article.title;
-  }, [audioState.currentArticleId, news, podcastList]);
+  }, [audioState.currentArticleId, news]);
 
 
   return (
@@ -422,7 +411,6 @@ const NewsApp = () => {
                 <button onClick={handleCreatePodcast} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
                     <Podcast className="w-5 h-5"/>
                     <span>Create Podcast</span>
-                    {podcastList.length > 0 && <span className="ml-2 bg-white text-purple-600 text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">{podcastList.length}</span>}
                 </button>
             </div>
         </header>
@@ -533,7 +521,7 @@ const NewsApp = () => {
             </div>
             
             {/* Search Filter */}
-            <div className={cn("lg:col-span-5", filters.region === 'india' ? 'lg:col-span-2' : '')}>
+            <div className={cn("lg:col-span-5", filters.region === 'india' ? 'lg:col-span-2' : 'lg:col-span-3')}>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 <Search className="w-4 h-4 inline mr-1" />
                 Search
@@ -607,12 +595,7 @@ const NewsApp = () => {
                   </p>
                 </div>
               </div>
-              <div className="bg-gray-50 dark:bg-gray-800/50 p-4 flex items-center justify-between border-t border-gray-200 dark:border-gray-700">
-                <div className="flex items-center gap-2">
-                    <button onClick={() => handleAddToPodcast(article)} className="p-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
-                        <Plus className="w-5 h-5"/>
-                    </button>
-                </div>
+              <div className="bg-gray-50 dark:bg-gray-800/50 p-4 flex items-center justify-end border-t border-gray-200 dark:border-gray-700">
                 <a href={article.link} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1">
                   Read More <ExternalLink className="w-4 h-4" />
                 </a>
@@ -678,10 +661,11 @@ const NewsApp = () => {
                       <button onClick={() => setIsPodcastModalOpen(false)} className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"><X className="w-6 h-6"/></button>
                   </div>
                   <div className="space-y-4">
-                      <ul className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                          {podcastList.map((article, index) => (
-                              <li key={article.article_id} className="p-3 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center justify-between">
-                                  <span className="font-medium text-gray-800 dark:text-gray-200 truncate">{index + 1}. {article.title}</span>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">This will generate a podcast including all <strong>{news.length}</strong> currently loaded articles.</p>
+                      <ul className="space-y-2 max-h-60 overflow-y-auto pr-2 border-y dark:border-gray-700 py-2">
+                          {news.map((article, index) => (
+                              <li key={article.article_id} className="p-2 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center justify-between">
+                                  <span className="font-medium text-sm text-gray-800 dark:text-gray-200 truncate">{index + 1}. {article.title}</span>
                               </li>
                           ))}
                       </ul>
@@ -694,7 +678,7 @@ const NewsApp = () => {
                           </select>
                       </div>
                       <div className="flex justify-end gap-3 pt-4">
-                          <button onClick={() => { setIsPodcastModalOpen(false); setPodcastList([]); }} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors">Clear List</button>
+                          <button onClick={() => setIsPodcastModalOpen(false)} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors">Cancel</button>
                           <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2">
                               <Rss className="w-5 h-5"/>
                               Generate Podcast
@@ -711,3 +695,5 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
+
+    
