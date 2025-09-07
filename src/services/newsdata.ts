@@ -48,18 +48,20 @@ export async function fetchNews(
       },
     });
 
-    console.log('Response status:', response.status);
-
     if (!response.ok) {
         const errorText = await response.text();
         console.error('API Error Response:', errorText);
+        let errorMessage = `API Error (${response.status})`;
         try {
             const errorJson = JSON.parse(errorText);
-            const errorMessage = (errorJson.results && errorJson.results.message) || errorJson.message || `API Error (${response.status})`;
-            throw new Error(`API Error (${response.status}): ${errorMessage}`);
+            // Access the message from the nested 'results' object if it exists
+            errorMessage = (errorJson.results && errorJson.results.message) 
+              ? `${errorMessage}: ${errorJson.results.message}` 
+              : `${errorMessage}: ${errorText}`;
         } catch (parseError) {
-            throw new Error(`API Error (${response.status}): ${errorText}`);
+            errorMessage = `${errorMessage}: ${errorText}`;
         }
+        throw new Error(errorMessage);
     }
 
     const data: NewsDataResponse = await response.json();
@@ -76,7 +78,7 @@ export async function fetchNews(
     // Re-throw the error to be handled by the calling flow
     if (error instanceof Error) {
         if (error.message.includes('422')) {
-          throw new Error('Invalid request parameters. Check your API key and request parameters.');
+          throw new Error('Invalid request parameters. This might be due to an incorrect API key or invalid parameter combinations.');
         } else if (error.message.includes('401')) {
           throw new Error('Invalid API key. Please check your newsdata.io API key.');
         } else if (error.message.includes('429')) {
