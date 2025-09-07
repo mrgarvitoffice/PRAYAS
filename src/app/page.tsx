@@ -332,8 +332,6 @@ const NewsApp = () => {
     const langCode = filters.language === 'hi' ? 'hi-IN' : 'en-US';
     utterance.lang = langCode;
 
-    // Find the best voice available for the selected language
-    // Prioritize the Google voices as they are often higher quality
     const bestVoice = voices.find(v => v.lang === langCode && v.name.includes('Google')) ||
                       voices.find(v => v.lang === langCode && v.name.includes('Natural')) ||
                       voices.find(v => v.lang === langCode && v.localService) ||
@@ -728,5 +726,7 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
+
+    
 
     
