@@ -50,7 +50,7 @@ export function PrayasTerminal() {
 
   // States for pending filter selections in sidebar
   const [pendingRegion, setPendingRegion] = useState(activeRegion);
-  const [pendingState, setPendingState]_useState('All India');
+  const [pendingState, setPendingState] = useState('All India');
   const [pendingCity, setPendingCity] = useState('All');
   const [pendingCategory, setPendingCategory] = useState(activeCategory);
 
@@ -290,3 +290,5 @@ export function PrayasTerminal() {
     </SidebarProvider>
   );
 }
+
+    
