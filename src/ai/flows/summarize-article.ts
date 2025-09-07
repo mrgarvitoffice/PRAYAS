@@ -20,10 +20,10 @@ const SummarizeArticleInputSchema = z.object({
 export type SummarizeArticleInput = z.infer<typeof SummarizeArticleInputSchema>;
 
 const SummarizeArticleOutputSchema = z.object({
-  heading: z.string().describe('A concise heading for the article.'),
+  heading: z.string().describe('A concise, engaging heading for the article, suitable for a news feed.'),
   important_points: z
     .array(z.string())
-    .describe('An array of 2-4 crucial points from the article.'),
+    .describe('An array of 2-3 crucial bullet points summarizing the article.'),
 });
 
 export type SummarizeArticleOutput = z.infer<typeof SummarizeArticleOutputSchema>;
@@ -37,19 +37,18 @@ const prompt = ai.definePrompt({
   input: {schema: SummarizeArticleInputSchema},
   output: {schema: SummarizeArticleOutputSchema},
   model: 'googleai/gemini-2.5-flash-lite',
-  prompt: `You are an expert news summarizer.
+  prompt: `You are an expert news summarizer. Your goal is to provide a concise, easy-to-read summary of a news article.
 
-  Your goal is to provide a concise summary of a news article.
-  The summary should include a heading and 2-4 key bullet points.
+The output must be in a specific JSON format. It must include an engaging 'heading' for the article and a list of 2-3 'important_points'.
 
-  Article Title: {{{title}}}
-  Article Text: {{{full_text}}}
+- The 'heading' should be a concise and catchy title for the news feed.
+- The 'important_points' should be an array of 2 to 3 strings, each representing a key takeaway from the article.
 
-  Summary format:
-  {
-    heading: string,
-    important_points: string[]
-  }`,
+Article Title: {{{title}}}
+Article Text: {{{full_text}}}
+
+Please provide the summary in the specified JSON format.
+`,
 });
 
 const summarizeArticleFlow = ai.defineFlow(

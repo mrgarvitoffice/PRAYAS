@@ -522,6 +522,7 @@ const NewsApp = () => {
                 
                 const title = filters.language === 'hi' && article.titleHi ? article.titleHi : article.title;
                 const summary = filters.language === 'hi' && article.summaryHi ? article.summaryHi : article.summary;
+                const importantPoints = filters.language === 'hi' && article.importantPointsHi.length > 0 ? article.importantPointsHi : article.importantPoints;
                 const isLoading = isCurrentlyLoadingAudio || isCurrentlyProcessingText;
 
                 const needsProcessing = (filters.language === 'en' && article.importantPoints.length === 0) || (filters.language === 'hi' && !article.titleHi);
@@ -565,9 +566,19 @@ const NewsApp = () => {
                         )}
                        
                       </div>
-                      <p className="text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-4 flex-1">
-                        {isLoading && filters.language === 'hi' ? 'Translating...' : summary}
-                      </p>
+                      
+                      {isLoading && filters.language === 'hi' ? (
+                          <p className="text-slate-600 dark:text-slate-300 leading-relaxed flex-1">Translating...</p>
+                      ) : importantPoints.length > 0 ? (
+                        <ul className="space-y-2 text-slate-600 dark:text-slate-300 leading-relaxed flex-1 list-disc pl-5">
+                          {importantPoints.map((point, index) => (
+                            <li key={index}>{point}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-slate-600 dark:text-slate-300 leading-relaxed flex-1">{summary}</p>
+                      )}
+
                     </div>
                     <div className="bg-slate-50 dark:bg-slate-800 p-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700/50">
                       <div className="flex items-center gap-2">
@@ -687,5 +698,3 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
-
-    
