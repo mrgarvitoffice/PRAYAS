@@ -19,11 +19,22 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { useAudioPlayer } from '@/context/audio-player-context';
 import type { Article, Language } from '@/lib/types';
 import { fetchAndProcessNews } from '@/ai/flows/fetch-and-process-news';
-import { AudioPlayer } from '@/components/audio-player';
+import { AudioPlayerProvider, useAudioPlayer } from '@/context/audio-player-context';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { summarizeArticle } from '@/ai/flows/summarize-article';
+import { translateAndSummarizeArticleHindi } from '@/ai/flows/translate-and-summarize-article-hindi';
+
 
 const INDIAN_STATES: Record<string, string[]> = {
   'Andhra Pradesh': ['Visakhapatnam', 'Vijayawada', 'Guntur', 'Tirupati'],
@@ -60,24 +71,78 @@ const NewsApp = () => {
     language: 'en' as Language,
   });
   const { toast } = useToast();
-  const { playArticle, currentArticle, isLoading: isAudioLoading, updateArticleInList } = useAudioPlayer();
 
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
   const [podcastList, setPodcastList] = useState<Article[]>([]);
   
-  const handleArticleUpdate = (updatedArticle: Article) => {
-    setNews(currentNews => 
-      currentNews.map(a => a.id === updatedArticle.id ? updatedArticle : a)
-    );
-    updateArticleInList(updatedArticle);
-  }
+  // State for Web Speech API
+  const [isListeningAll, setIsListeningAll] = useState(false);
+  const [currentSpokenIndex, setCurrentSpokenIndex] = useState(-1);
+  const synthRef = React.useRef<SpeechSynthesis | null>(null);
+  const utterancesRef = React.useRef<SpeechSynthesisUtterance[]>([]);
+  
+  const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      synthRef.current = window.speechSynthesis;
+      const getVoices = () => {
+        const voices = synthRef.current?.getVoices() || [];
+        // Prioritize high-quality, non-local, female voices
+        const preferredVoice = 
+          voices.find(v => v.name === 'Google UK English Female') ||
+          voices.find(v => v.name === 'Samantha' && v.lang.startsWith('en')) ||
+          voices.find(v => v.lang.startsWith('en') && v.name.includes('Female')) ||
+          voices.find(v => v.lang.startsWith('en') && !v.localService) ||
+          voices.find(v => v.lang.startsWith('en')) ||
+          null;
+        setSelectedVoice(preferredVoice);
+      };
+      getVoices();
+      if (synthRef.current?.onvoiceschanged !== undefined) {
+        synthRef.current.onvoiceschanged = getVoices;
+      }
+    }
+  }, []);
+
+
+  const processAndSetNews = useCallback(async (articles: Article[]) => {
+    if (filters.language === 'hi') {
+      toast({ title: 'Translating articles to Hindi...', description: 'Please wait.' });
+      const translatedArticles = await Promise.all(
+        articles.map(async (article) => {
+          if (!article.titleHi) { // Only translate if not already translated
+            try {
+              const hindiSummary = await translateAndSummarizeArticleHindi({
+                articleTitle: article.title,
+                articleContent: article.rawContent,
+              });
+              return {
+                ...article,
+                titleHi: hindiSummary.translatedTitle,
+                summaryHi: hindiSummary.summaryPoints.join(' '),
+                importantPointsHi: hindiSummary.summaryPoints,
+              };
+            } catch (e) {
+              console.error(`Failed to translate article ${article.id}`, e);
+              return article; // Return original article on error
+            }
+          }
+          return article;
+        })
+      );
+      setNews(translatedArticles);
+    } else {
+      setNews(articles);
+    }
+  }, [filters.language, toast]);
 
   const fetchNewsCallback = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const countryCode = filters.region === 'world' ? 'us' : 'in';
-      const fetchedArticles = await fetchAndProcessNews({
+      let fetchedArticles = await fetchAndProcessNews({
         category: filters.category || 'all',
         country: countryCode,
         state: filters.state || 'All',
@@ -90,11 +155,11 @@ const NewsApp = () => {
           const searchTerm = filters.search.trim().toLowerCase();
           processedArticles = processedArticles.filter(article => 
               article.title.toLowerCase().includes(searchTerm) ||
-              article.summary.toLowerCase().includes(searchTerm)
+              (article.summary && article.summary.toLowerCase().includes(searchTerm))
           );
       }
       
-      setNews(processedArticles);
+      await processAndSetNews(processedArticles);
 
       if (processedArticles.length === 0) {
         setError('No news articles found for the selected filters.');
@@ -108,7 +173,7 @@ const NewsApp = () => {
     } finally {
       setLoading(false);
     }
-  }, [filters.region, filters.state, filters.city, filters.category, filters.search]);
+  }, [filters.region, filters.state, filters.city, filters.category, filters.search, processAndSetNews]);
 
   const handleFilterChange = (filterType: string, value: string) => {
     setFilters(prev => {
@@ -152,7 +217,7 @@ const NewsApp = () => {
       setPodcastList(prev => [...prev, article]);
       toast({
         title: "Added to Podcast",
-        description: `"${filters.language === 'hi' ? article.titleHi : article.title}" has been added to your episode.`,
+        description: `"${filters.language === 'hi' && article.titleHi ? article.titleHi : article.title}" has been added to your episode.`,
       });
     }
   };
@@ -169,6 +234,41 @@ const NewsApp = () => {
       });
     }
   };
+  
+  const toggleListenAll = () => {
+    const synth = synthRef.current;
+    if (!synth || news.length === 0) return;
+
+    if (isListeningAll) {
+      synth.cancel();
+      setIsListeningAll(false);
+      setCurrentSpokenIndex(-1);
+    } else {
+      const textsToRead = news.map(article => {
+        const title = filters.language === 'hi' && article.titleHi ? article.titleHi : article.title;
+        return title;
+      });
+
+      utterancesRef.current = textsToRead.map((text, index) => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        if (selectedVoice) {
+            utterance.voice = selectedVoice;
+        }
+        utterance.onstart = () => setCurrentSpokenIndex(index);
+        utterance.onend = () => {
+            if (index === textsToRead.length - 1) {
+                setIsListeningAll(false);
+                setCurrentSpokenIndex(-1);
+            }
+        };
+        return utterance;
+      });
+      
+      setIsListeningAll(true);
+      utterancesRef.current.forEach(u => synth.speak(u));
+    }
+  };
+
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 transition-colors duration-300">
@@ -183,7 +283,11 @@ const NewsApp = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-             <Button variant="outline" onClick={handleCreatePodcast}>
+            <Button variant="outline" onClick={toggleListenAll}>
+              {isListeningAll ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+              {isListeningAll ? 'Stop Listening' : 'Listen to All'}
+            </Button>
+            <Button variant="outline" onClick={handleCreatePodcast}>
               <Podcast className="mr-2 h-4 w-4" />
               Create Podcast
             </Button>
@@ -310,8 +414,8 @@ const NewsApp = () => {
           </div>
         ) : news.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-            {news.map((article) => {
-              const isThisAudioLoading = currentArticle?.id === article.id && isAudioLoading;
+            {news.map((article, index) => {
+              const isCurrentlySpoken = isListeningAll && currentSpokenIndex === index;
               const title = filters.language === 'hi' && article.titleHi ? article.titleHi : article.title;
               const summary = filters.language === 'hi' && article.summaryHi ? article.summaryHi : article.summary;
 
@@ -320,7 +424,7 @@ const NewsApp = () => {
                   key={article.id}
                   className={cn(
                     "bg-white dark:bg-slate-800/50 rounded-xl shadow-md hover:shadow-2xl transition-all duration-300 flex flex-col overflow-hidden border border-slate-200 dark:border-slate-700/50 group",
-                    currentArticle?.id === article.id && "ring-2 ring-indigo-500"
+                    isCurrentlySpoken && "ring-2 ring-indigo-500"
                   )}
                 >
                   {article.media.image && (
@@ -367,17 +471,6 @@ const NewsApp = () => {
                           Read More <ExternalLink className="w-4 h-4" />
                        </a>
                     </div>
-                    <Button
-                      onClick={() => playArticle(article, filters.language, handleArticleUpdate)}
-                      disabled={isThisAudioLoading}
-                    >
-                      {isThisAudioLoading ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Play className="mr-2 h-4 w-4" />
-                      )}
-                      Listen
-                    </Button>
                   </div>
                 </article>
               );
@@ -391,7 +484,6 @@ const NewsApp = () => {
             </div>
         )}
       </div>
-      <AudioPlayer language={filters.language} />
       
        {/* Podcast Modal */}
        <Dialog open={isPodcastModalOpen} onOpenChange={setIsPodcastModalOpen}>
@@ -435,17 +527,6 @@ const NewsApp = () => {
 };
 
 
-import { AudioPlayerProvider } from '@/context/audio-player-context';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
-
 export default function Home() {
   return (
     <AudioPlayerProvider>
@@ -453,5 +534,3 @@ export default function Home() {
     </AudioPlayerProvider>
   );
 }
-
-    
