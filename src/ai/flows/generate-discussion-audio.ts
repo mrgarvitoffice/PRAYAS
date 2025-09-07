@@ -35,7 +35,7 @@ export async function generateDiscussionAudio(input: GenerateDiscussionAudioInpu
     let errorMessage = error.message || "An unexpected error occurred.";
     if (errorMessage.toLowerCase().includes("dialogue script")) {
       errorMessage = "The AI failed to create a discussion script from the provided text. This can sometimes happen with very short or complex content. Please try rephrasing or using a longer text.";
-    } else if (errorMessage.includes('429')) {
+    } else if (error.message.includes('429')) {
       errorMessage = 'You have exceeded the daily limit for audio generation. Please try again tomorrow.';
     }
     throw new Error(errorMessage);
