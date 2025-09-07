@@ -7,12 +7,12 @@ export function Logo({ className }: { className?: string }) {
     <Link
       href="/"
       className={cn(
-        'flex items-center gap-2 text-xl font-bold font-headline text-primary-foreground',
+        'flex items-center gap-2 text-xl font-bold font-headline text-foreground',
         className
       )}
     >
-      <Newspaper className="h-7 w-7" />
-      <span>Prayas News Terminal</span>
+      <Newspaper className="h-7 w-7 text-primary" />
+      <span>Prayas News</span>
     </Link>
   );
 }

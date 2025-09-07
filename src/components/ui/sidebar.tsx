@@ -260,29 +260,40 @@ const Sidebar = React.forwardRef<
 Sidebar.displayName = "Sidebar"
 
 const SidebarTrigger = React.forwardRef<
-  React.ElementRef<typeof Button>,
-  React.ComponentProps<typeof Button>
->(({ className, onClick, ...props }, ref) => {
-  const { toggleSidebar } = useSidebar()
+  HTMLButtonElement,
+  React.ComponentProps<"button"> & { asChild?: boolean }
+>(({ className, onClick, asChild, ...props }, ref) => {
+  const { toggleSidebar } = useSidebar();
+  const Comp = asChild ? Slot : "button";
+
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (onClick) {
+      onClick(event);
+    }
+    toggleSidebar();
+  };
+
+  if (asChild) {
+    return (
+      <Comp ref={ref} onClick={handleClick} {...props}>
+        {props.children}
+      </Comp>
+    );
+  }
 
   return (
-    <Button
+    <Comp
       ref={ref}
       data-sidebar="trigger"
-      variant="ghost"
-      size="icon"
       className={cn("h-7 w-7", className)}
-      onClick={(event) => {
-        onClick?.(event)
-        toggleSidebar()
-      }}
+      onClick={handleClick}
       {...props}
     >
       <PanelLeft />
       <span className="sr-only">Toggle Sidebar</span>
-    </Button>
-  )
-})
+    </Comp>
+  );
+});
 SidebarTrigger.displayName = "SidebarTrigger"
 
 const SidebarRail = React.forwardRef<

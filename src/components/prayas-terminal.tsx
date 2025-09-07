@@ -33,9 +33,10 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Languages, Loader2, Newspaper, Podcast, Rss } from 'lucide-react';
+import { Languages, Loader2, Menu, Newspaper, Podcast, Rss } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { fetchAndProcessNews } from '@/ai/flows/fetch-and-process-news';
+import { Badge } from '@/components/ui/badge';
 
 export function PrayasTerminal() {
   const [articles, setArticles] = useState<Article[]>([]);
@@ -140,9 +141,9 @@ export function PrayasTerminal() {
   const filterPanel = (
     <>
       <SidebarHeader>
-        <h2 className="text-lg font-semibold font-headline">Filters</h2>
+        <h2 className="text-lg font-semibold font-headline px-2">Filters</h2>
       </SidebarHeader>
-      <SidebarContent asChild>
+      <SidebarContent>
         <ScrollArea>
           <SidebarGroup>
             <label className="text-sm font-medium">Region</label>
@@ -201,21 +202,23 @@ export function PrayasTerminal() {
       </Sidebar>
       <SidebarInset>
         <div className="flex flex-col min-h-screen">
-          <header className="sticky top-0 z-40 w-full bg-gradient-to-r from-primary to-indigo-400 dark:from-primary dark:to-indigo-800 shadow-md">
+          <header className="sticky top-0 z-40 w-full border-b bg-background">
             <div className="container mx-auto flex h-16 items-center justify-between px-4">
-              <div className="flex items-center gap-4">
-                <SidebarTrigger className="text-primary-foreground hover:bg-white/20" />
+              <div className="flex items-center gap-2">
+                <SidebarTrigger asChild className="md:hidden">
+                  <Button variant="ghost" size="icon"><Menu/></Button>
+                </SidebarTrigger>
                 <Logo />
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="ghost" className="text-primary-foreground hover:bg-white/20" onClick={createPodcast}>
-                  <Podcast className="mr-2 h-5 w-5" />
+                <Button variant="outline" onClick={createPodcast}>
+                  <Podcast className="mr-2 h-4 w-4" />
                   Create Podcast
-                  {podcastList.length > 0 && <Badge variant="destructive" className="ml-2">{podcastList.length}</Badge>}
+                  {podcastList.length > 0 && <Badge variant="default" className="ml-2">{podcastList.length}</Badge>}
                 </Button>
                 <Select value={language} onValueChange={(v) => setLanguage(v as Language)}>
-                  <SelectTrigger className="w-auto gap-2 border-0 bg-transparent text-primary-foreground hover:bg-white/20 focus:ring-0 focus:ring-offset-0">
-                    <Languages className="h-5 w-5"/>
+                  <SelectTrigger className="w-auto gap-2">
+                    <Languages className="h-4 w-4"/>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -223,11 +226,17 @@ export function PrayasTerminal() {
                     <SelectItem value="hi">हिंदी</SelectItem>
                   </SelectContent>
                 </Select>
-                <ThemeToggle className="text-primary-foreground hover:bg-white/20" />
+                <ThemeToggle />
               </div>
             </div>
           </header>
           <main className="flex-1 p-4 md:p-8 container mx-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h1 className="text-2xl md:text-3xl font-bold font-headline">Top Stories</h1>
+              <SidebarTrigger asChild className="hidden md:flex">
+                 <Button variant="outline" size="icon"><Menu/></Button>
+              </SidebarTrigger>
+            </div>
             {isLoading ? (
                <div className="flex flex-col items-center justify-center h-full text-center py-20">
                   <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
@@ -272,7 +281,7 @@ export function PrayasTerminal() {
             </ul>
           </div>
           <DialogFooter>
-            <Button onClick={() => {setIsPodcastModalOpen(false); setPodcastList([])}}>Clear List</Button>
+            <Button variant="outline" onClick={() => {setIsPodcastModalOpen(false); setPodcastList([])}}>Clear List</Button>
             <Button>
               <Rss className="mr-2 h-4 w-4" />
               Generate Podcast
