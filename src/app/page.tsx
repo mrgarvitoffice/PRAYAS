@@ -390,7 +390,7 @@ const NewsApp = () => {
       return;
     }
 
-    const langCode = filters.language === 'hi' ? 'hi-IN' : 'en-IN';
+    const langCode = 'hi-IN'; // Always use Hindi voice
     const femaleVoice = voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('female'));
     const bestVoice = femaleVoice ||
                       voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('google')) ||
@@ -879,3 +879,5 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
+
+    
