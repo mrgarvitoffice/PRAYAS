@@ -24,7 +24,7 @@ const nextConfig: NextConfig = {
         pathname: '/**',
       },
       {
-        protocol: 'https',
+        protocol: 'https' ,
         hostname: 'media.assettype.com',
         port: '',
         pathname: '/**',
@@ -68,6 +68,12 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'static.toiimg.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'th-i.thgim.com',
         port: '',
         pathname: '/**',
       },
