@@ -22,6 +22,7 @@ import {
   Info,
   ListMusic,
   Trash2,
+  StopCircle,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -229,6 +230,15 @@ const NewsApp = () => {
     return audioPlayer.playlist.some(a => a.id === articleId);
   }
 
+  const readAllHeadlines = useCallback(() => {
+    const headlines = news.map(a => a.title).filter(Boolean).join('. ');
+    if (headlines) {
+      audioPlayer.playText(headlines, filters.language);
+    } else {
+      toast({ title: 'No headlines to read', description: 'There are no articles with headlines to read out.' });
+    }
+  }, [news, audioPlayer, filters.language, toast]);
+
   return (
     <TooltipProvider>
       <div className="min-h-screen bg-gray-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 transition-colors duration-300">
@@ -243,10 +253,15 @@ const NewsApp = () => {
               </p>
             </div>
              <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={() => audioPlayer.playPlaylist(audioPlayer.playlist, filters.language)} disabled={audioPlayer.playlist.length === 0}>
-                    <ListMusic className="mr-2 h-4 w-4" />
-                    Listen to Playlist ({audioPlayer.playlist.length})
+                <Button variant="outline" onClick={readAllHeadlines} disabled={news.length === 0 || audioPlayer.isPlaying}>
+                    <Play className="mr-2 h-4 w-4" />
+                    Read Headlines
                 </Button>
+                 {audioPlayer.isPlaying && (
+                  <Button variant="outline" size="icon" onClick={() => audioPlayer.stop()}>
+                    <StopCircle className="h-5 w-5" />
+                  </Button>
+                )}
               <Button variant="outline" onClick={handleCreatePodcast} disabled={audioPlayer.playlist.length === 0}>
                 <Podcast className="mr-2 h-4 w-4" />
                 Create Podcast

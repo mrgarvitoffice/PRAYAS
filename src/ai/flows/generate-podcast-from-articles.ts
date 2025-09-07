@@ -71,7 +71,6 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
   console.log('[AI Flow - Podcast] Generating dialogue script...');
   const { script } = await generatePodcastScript({ articles, language });
   
-  // Prevent calling TTS with an empty script. The script generation flow will throw an error if it fails.
   if (!script) {
      throw new Error("The podcast script generation returned an empty script.");
   }

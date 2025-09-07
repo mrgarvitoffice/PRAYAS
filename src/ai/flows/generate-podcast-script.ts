@@ -93,15 +93,14 @@ const generatePodcastScriptFlow = ai.defineFlow({
     const content = getArticleContent(article);
     return `Source: ${source}\nContent: ${content}`;
   }).join('\n\n---\n\n');
-
-  const { output } = await prompt({ articleSnippets, language });
-
-  if (!output) {
-      console.error("[AI Flow Error - Podcast Script] AI returned empty or invalid data:", output);
-      return { script: '' };
-  }
   
-  let dialogueScript = output.trim();
+  if (!articleSnippets.trim()) {
+    throw new Error("Cannot generate script from empty article content.");
+  }
+
+  const { text } = await dialoguePrompt({ articleSnippets, language });
+  
+  let dialogueScript = text.trim();
   
   // Self-healing: Clean up the script to ensure it only contains valid dialogue lines.
   dialogueScript = dialogueScript
@@ -110,8 +109,6 @@ const generatePodcastScriptFlow = ai.defineFlow({
     .join('\n');
 
   if (!dialogueScript) {
-    console.error("Podcast script generation failed, AI returned no valid script lines.");
-    // This will be caught by the calling flow.
     throw new Error("AI failed to generate a valid script from the provided articles.");
   }
   
