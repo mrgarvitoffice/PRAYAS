@@ -249,7 +249,7 @@ const NewsApp = () => {
        toast({
         variant: "destructive",
         title: "No Articles Available",
-        description: "There are no news articles to create a podcast from.",
+        description: "There are no news articles to create a discussion from.",
       });
     }
   };
@@ -259,19 +259,19 @@ const NewsApp = () => {
     setIsGeneratingPodcast(true);
     setGeneratedPodcastAudio(null);
     try {
-      toast({ title: 'Generating your podcast...', description: 'This may take a minute or two. Preparing articles...' });
+      toast({ title: 'Generating your discussion...', description: 'This may take a minute or two. Preparing articles...' });
       
       const articlesForPodcast = news.slice(0, 10);
       
       const result = await generatePodcastFromArticles({ articles: articlesForPodcast });
       setGeneratedPodcastAudio(result.audioDataUri);
-      toast({ title: 'Podcast generated successfully!', description: 'You can now play or download it.' });
+      toast({ title: 'Discussion generated successfully!', description: 'You can now play or download it.' });
     } catch (e) {
-      console.error("Error generating podcast", e);
+      console.error("Error generating discussion", e);
       const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
       toast({
         variant: "destructive",
-        title: "Podcast Generation Failed",
+        title: "Discussion Generation Failed",
         description: errorMessage,
       });
     } finally {
@@ -389,7 +389,7 @@ const NewsApp = () => {
                 )}
               <Button variant="outline" onClick={handleCreatePodcast} disabled={news.length === 0}>
                 <Podcast className="mr-2 h-4 w-4" />
-                Create Podcast
+                Generate Discussion
               </Button>
               <ThemeToggle />
             </div>
@@ -627,18 +627,18 @@ const NewsApp = () => {
         <Dialog open={isPodcastModalOpen} onOpenChange={setIsPodcastModalOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create Your Podcast Episode</DialogTitle>
+              <DialogTitle>Generate Your Discussion Episode</DialogTitle>
               <DialogDescription>
                 {generatedPodcastAudio
-                  ? 'Your podcast is ready! You can now play it below or download it.'
-                  : `A podcast will be generated from the top ${Math.min(10, news.length)} available articles.`}
+                  ? 'Your discussion is ready! You can now play it below or download it.'
+                  : `A discussion will be generated from the top ${Math.min(10, news.length)} available articles.`}
               </DialogDescription>
             </DialogHeader>
 
             {isGeneratingPodcast ? (
               <div className="flex flex-col items-center justify-center my-8">
                 <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
-                <p className="mt-4 text-slate-500">Generating your AI podcast, please wait...</p>
+                <p className="mt-4 text-slate-500">Generating your AI discussion, please wait...</p>
               </div>
             ) : generatedPodcastAudio ? (
               <div className="my-4 space-y-4">
@@ -647,14 +647,14 @@ const NewsApp = () => {
                 </audio>
                 <a
                   href={generatedPodcastAudio}
-                  download="prayas-podcast.wav"
+                  download="prayas-discussion.wav"
                   className={cn(
                     'w-full',
                     buttonVariants({ variant: 'outline' })
                   )}
                 >
                   <Download className="mr-2 h-4 w-4" />
-                  Download Podcast
+                  Download Discussion
                 </a>
               </div>
             ) : (
@@ -680,7 +680,7 @@ const NewsApp = () => {
               {!generatedPodcastAudio && (
                 <Button onClick={handleGeneratePodcast} disabled={isGeneratingPodcast}>
                   {isGeneratingPodcast ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rss className="mr-2 h-4 w-4" />}
-                  Generate Podcast
+                  Generate Discussion
                 </Button>
               )}
             </DialogFooter>
