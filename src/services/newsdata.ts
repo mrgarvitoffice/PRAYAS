@@ -28,7 +28,7 @@ export async function fetchNews(
     country: country.toLowerCase(),
   });
 
-  // The API requires either `q` or `category`, but not both.
+  // The API requires either `q` or `category`, but not both together with `country`.
   // The free plan doesn't support the 'size' parameter.
   if (category && category.toLowerCase() !== 'all') {
     params.set('category', category.toLowerCase());
