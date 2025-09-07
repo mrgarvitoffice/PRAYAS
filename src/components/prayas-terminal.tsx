@@ -205,7 +205,7 @@ export function PrayasTerminal() {
           <header className="sticky top-0 z-40 w-full border-b bg-background">
             <div className="container mx-auto flex h-16 items-center justify-between px-4">
               <div className="flex items-center gap-2">
-                <SidebarTrigger asChild className="md:hidden">
+                <SidebarTrigger asChild>
                   <Button variant="ghost" size="icon"><Menu/></Button>
                 </SidebarTrigger>
                 <Logo />
@@ -233,9 +233,14 @@ export function PrayasTerminal() {
           <main className="flex-1 p-4 md:p-8 container mx-auto">
             <div className="flex items-center justify-between mb-6">
               <h1 className="text-2xl md:text-3xl font-bold font-headline">Top Stories</h1>
-              <SidebarTrigger asChild className="hidden md:flex">
-                 <Button variant="outline" size="icon"><Menu/></Button>
-              </SidebarTrigger>
+              <Button variant="outline" size="icon" className="hidden md:flex" onClick={() => {
+                  const trigger = document.querySelector('[data-sidebar="trigger"]');
+                  if (trigger instanceof HTMLElement) {
+                    trigger.click();
+                  }
+              }}>
+                <Menu/>
+              </Button>
             </div>
             {isLoading ? (
                <div className="flex flex-col items-center justify-center h-full text-center py-20">
