@@ -8,9 +8,9 @@ import { Pause, Play, StopCircle, X } from 'lucide-react';
 import type { Language } from '@/lib/types';
 
 export function AudioPlayer({ language }: { language: Language }) {
-  const { currentArticle, isPlaying, progress, togglePlayPause, stop, seek } = useAudioPlayer();
+  const { processedArticle, isPlaying, progress, togglePlayPause, stop, seek } = useAudioPlayer();
 
-  if (!currentArticle) {
+  if (!processedArticle) {
     return null;
   }
 
@@ -22,7 +22,7 @@ export function AudioPlayer({ language }: { language: Language }) {
     seek(newProgress);
   };
   
-  const title = language === 'hi' ? currentArticle.titleHi : currentArticle.title;
+  const title = language === 'hi' ? processedArticle.titleHi : processedArticle.title;
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 p-4">
@@ -34,7 +34,7 @@ export function AudioPlayer({ language }: { language: Language }) {
           </Button>
           <div className="flex-1">
             <p className="font-bold truncate font-headline">{title}</p>
-            <p className="text-sm text-muted-foreground">{currentArticle.source.name}</p>
+            <p className="text-sm text-muted-foreground">{processedArticle.source.name}</p>
             <div className="mt-2" onClick={handleProgressClick} >
               <Progress value={progress} className="h-2 cursor-pointer" />
             </div>

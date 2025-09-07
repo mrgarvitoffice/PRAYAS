@@ -23,14 +23,23 @@ interface NewsCardProps {
 }
 
 export function NewsCard({ article, language, onAddToPodcast }: NewsCardProps) {
-  const { playArticle, currentArticle, isPlaying, isLoading } = useAudioPlayer();
+  const { playArticle, currentArticle, isLoading } = useAudioPlayer();
   const { toast } = useToast();
 
   const isCurrentArticle = currentArticle?.id === article.id;
   const isThisLoading = isCurrentArticle && isLoading;
 
   const handlePlay = () => {
-    playArticle(article, language);
+    // rawContent is passed for on-demand summarization
+    if (article.rawContent) {
+      playArticle(article, language);
+    } else {
+      toast({
+        variant: "destructive",
+        title: "Content not available",
+        description: "The full content of this article is missing and cannot be played.",
+      });
+    }
   };
   
   const handleShare = () => {
@@ -41,8 +50,8 @@ export function NewsCard({ article, language, onAddToPodcast }: NewsCardProps) {
     });
   };
 
-  const title = language === 'hi' ? article.titleHi : article.title;
-  const summary = language === 'hi' ? article.summaryHi : article.summary;
+  const title = article.title;
+  const summary = article.summary;
 
   return (
     <Card className="flex flex-col overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group">

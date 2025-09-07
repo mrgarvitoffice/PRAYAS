@@ -1,9 +1,9 @@
 'use server';
 
 /**
- * @fileOverview A Genkit flow to fetch news, summarize it, and translate it.
+ * @fileOverview A Genkit flow to fetch news and transform it into the Article format.
  *
- * - fetchAndProcessNews - Fetches news, summarizes, and translates.
+ * - fetchAndProcessNews - Fetches news and performs basic data transformation.
  * - FetchAndProcessNewsInput - Input for the flow.
  * - FetchAndProcessNewsOutput - Output for the flow.
  */
@@ -11,8 +11,6 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import { fetchNews } from '@/services/newsdata';
-import { summarizeArticle } from './summarize-article';
-import { translateAndSummarizeArticleHindi } from './translate-and-summarize-article-hindi';
 import type { Article, NewsDataArticle } from '@/lib/types';
 
 const FetchAndProcessNewsInputSchema = z.object({
@@ -23,15 +21,17 @@ export type FetchAndProcessNewsInput = z.infer<
   typeof FetchAndProcessNewsInputSchema
 >;
 
+// The output schema now matches the raw article structure more closely,
+// as summarization is handled on the client.
 const FetchAndProcessNewsOutputSchema = z.array(
   z.object({
     id: z.string(),
     title: z.string(),
-    titleHi: z.string(),
+    titleHi: z.string(), // Will be populated on demand
     summary: z.string(),
-    summaryHi: z.string(),
-    importantPoints: z.array(z.string()),
-    importantPointsHi: z.array(z.string()),
+    summaryHi: z.string(), // Will be populated on demand
+    importantPoints: z.array(z.string()), // Will be populated on demand
+    importantPointsHi: z.array(z.string()), // Will be populated on demand
     contentUrl: z.string(),
     source: z.object({ name: z.string(), cred_score: z.number() }),
     publishedAt: z.string(),
@@ -41,6 +41,8 @@ const FetchAndProcessNewsOutputSchema = z.array(
     category: z.string(),
     media: z.object({ image: z.string() }),
     rank_score: z.number(),
+    // Add raw content for on-demand processing
+    rawContent: z.string(),
   })
 );
 
@@ -48,59 +50,38 @@ export type FetchAndProcessNewsOutput = z.infer<
   typeof FetchAndProcessNewsOutputSchema
 >;
 
-async function processArticle(
-  article: NewsDataArticle
-): Promise<Article | null> {
-  try {
-    const fullText = article.content || article.description || '';
-    // Skip articles that have no title or content to process
-    if (!article.title || !fullText) {
-      console.warn(`Skipping article ${article.article_id} due to missing title or content.`);
-      return null;
-    }
+// This function now does a simple transformation, not expensive AI processing.
+function transformArticle(article: NewsDataArticle): Article {
+  const publishedAt = new Date(article.pubDate).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  
+  const rawContent = article.content || article.description || '';
 
-    // Summarize in English
-    const englishSummary = await summarizeArticle({
-      title: article.title,
-      full_text: fullText,
-    });
-
-    // Translate and summarize in Hindi
-    const hindiSummary = await translateAndSummarizeArticleHindi({
-      articleTitle: article.title,
-      articleContent: fullText,
-    });
-
-    const publishedAt = new Date(article.pubDate).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-
-    return {
-      id: article.article_id,
-      title: englishSummary.heading,
-      titleHi: hindiSummary.translatedTitle,
-      summary: (article.description || englishSummary.important_points.join(' ')).slice(0, 200),
-      summaryHi: hindiSummary.summaryPoints.join(' '),
-      importantPoints: englishSummary.important_points,
-      importantPointsHi: hindiSummary.summaryPoints,
-      contentUrl: article.link,
-      source: { name: article.source_id, cred_score: 0.8 }, // Placeholder
-      publishedAt: publishedAt,
-      country: article.country[0] || 'World',
-      state: null, // newsdata.io doesn't provide state/city reliably
-      city: null,
-      category: article.category[0] || 'General',
-      media: {
-        image: article.image_url || `https://picsum.photos/600/400?random=${article.article_id}`,
-      },
-      rank_score: 90, // Placeholder
-    };
-  } catch (error) {
-    console.error(`Failed to process article ${article.article_id}:`, error);
-    return null;
-  }
+  return {
+    id: article.article_id,
+    title: article.title,
+    // Placeholder fields, will be filled in on-demand by the client
+    titleHi: '',
+    summary: (article.description || rawContent).slice(0, 200) || 'No description available.',
+    summaryHi: '',
+    importantPoints: [],
+    importantPointsHi: [],
+    rawContent: rawContent,
+    contentUrl: article.link,
+    source: { name: article.source_id, cred_score: 0.8 }, // Placeholder
+    publishedAt: publishedAt,
+    country: article.country[0] || 'World',
+    state: null, // newsdata.io doesn't provide state/city reliably
+    city: null,
+    category: article.category[0] || 'General',
+    media: {
+      image: article.image_url || `https://picsum.photos/600/400?random=${article.article_id}`,
+    },
+    rank_score: 90, // Placeholder
+  };
 }
 
 const fetchAndProcessNewsFlow = ai.defineFlow(
@@ -112,12 +93,14 @@ const fetchAndProcessNewsFlow = ai.defineFlow(
   async ({ category, country }) => {
     const newsResponse = await fetchNews(category, country);
     const articles = newsResponse.results || [];
+    
+    // Filter out articles that have no title or content to process
+    const validArticles = articles.filter(article => article.title && (article.content || article.description));
 
-    const processingPromises = articles.map(processArticle);
-    const processedArticles = await Promise.all(processingPromises);
-
-    // Filter out any null results from processing
-    return processedArticles.filter((a): a is Article => a !== null);
+    // Transform valid articles
+    const transformedArticles = validArticles.map(transformArticle);
+    
+    return transformedArticles;
   }
 );
 

@@ -15,6 +15,7 @@ export type Article = {
   category: string;
   media: { image: string };
   rank_score: number;
+  rawContent: string; // Added to store the full text for on-demand processing
 };
 
 export type LocationData = {

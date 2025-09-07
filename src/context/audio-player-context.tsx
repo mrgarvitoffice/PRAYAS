@@ -3,11 +3,13 @@
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import type { Article, Language } from '@/lib/types';
 import { generateTTSAudioClip } from '@/ai/flows/generate-tts-audio-clip';
+import { summarizeArticle } from '@/ai/flows/summarize-article';
+import { translateAndSummarizeArticleHindi } from '@/ai/flows/translate-and-summarize-article-hindi';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
 
 interface AudioPlayerContextType {
   currentArticle: Article | null;
+  processedArticle: Article | null; // Store the processed article with summaries
   isPlaying: boolean;
   isLoading: boolean;
   progress: number;
@@ -21,6 +23,7 @@ const AudioPlayerContext = createContext<AudioPlayerContextType | undefined>(und
 
 export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentArticle, setCurrentArticle] = useState<Article | null>(null);
+  const [processedArticle, setProcessedArticle] = useState<Article | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -40,6 +43,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const handleEnded = () => {
         setIsPlaying(false);
         setCurrentArticle(null);
+        setProcessedArticle(null);
       };
       const handlePlay = () => setIsPlaying(true);
       const handlePause = () => setIsPlaying(false);
@@ -63,30 +67,56 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (audioRef.current) {
       setIsLoading(true);
       setCurrentArticle(article);
+      setProcessedArticle(null); // Clear previous processed article
       setProgress(0);
       setIsPlaying(false);
 
       toast({
-        title: "Generating Audio...",
-        description: "Please wait while we prepare the audio summary.",
-        duration: 5000,
+        title: "Generating Smart Summary...",
+        description: "Please wait while we process and prepare the audio.",
+        duration: 10000,
       });
 
       try {
+        // Step 1: Summarize in English and Hindi (on-demand)
+        const [englishSummary, hindiSummary] = await Promise.all([
+          summarizeArticle({
+            title: article.title,
+            full_text: article.rawContent,
+          }),
+          translateAndSummarizeArticleHindi({
+            articleTitle: article.title,
+            articleContent: article.rawContent,
+          })
+        ]);
+
+        const updatedArticle = {
+          ...article,
+          title: englishSummary.heading,
+          titleHi: hindiSummary.translatedTitle,
+          importantPoints: englishSummary.important_points,
+          importantPointsHi: hindiSummary.summaryPoints,
+          summary: englishSummary.important_points.join(' '),
+          summaryHi: hindiSummary.summaryPoints.join(' '),
+        };
+        setProcessedArticle(updatedArticle);
+
+        // Step 2: Generate TTS from the processed content
         const ttsInput = {
-          title: language === 'hi' ? article.titleHi : article.title,
-          importantPoints: language === 'hi' ? article.importantPointsHi : article.importantPoints,
+          title: language === 'hi' ? updatedArticle.titleHi : updatedArticle.title,
+          importantPoints: language === 'hi' ? updatedArticle.importantPointsHi : updatedArticle.importantPoints,
           language: language === 'hi' ? 'hi-IN' : 'en-IN',
         };
+
         const result = await generateTTSAudioClip(ttsInput);
         audioRef.current.src = result.audioDataUri;
         audioRef.current.play();
       } catch (error) {
-        console.error('TTS Generation failed:', error);
+        console.error('On-demand processing or TTS Generation failed:', error);
         toast({
           variant: 'destructive',
-          title: 'Audio Generation Failed',
-          description: 'Could not generate the audio for this article.',
+          title: 'Playback Failed',
+          description: 'Could not process or generate the audio for this article.',
         });
         setCurrentArticle(null);
       } finally {
@@ -110,6 +140,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
       setCurrentArticle(null);
+      setProcessedArticle(null);
       setIsPlaying(false);
       setProgress(0);
     }
@@ -125,6 +156,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const value = {
     currentArticle,
+    processedArticle,
     isPlaying,
     isLoading,
     progress,
