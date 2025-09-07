@@ -67,7 +67,9 @@ export async function fetchNews(
     const data: NewsDataResponse = await response.json();
 
     if (!data.results) {
-      throw new Error('Invalid response structure: missing results array');
+      // In case of success but empty results, return an empty array to prevent crashes
+      console.log(`Successfully fetched 0 articles or invalid response structure.`);
+      return { ...data, results: [] };
     }
     
     console.log(`Successfully fetched ${data.results.length} articles`);
@@ -78,9 +80,9 @@ export async function fetchNews(
     // Re-throw the error to be handled by the calling flow
     if (error instanceof Error) {
         if (error.message.includes('422')) {
-          throw new Error('Invalid request parameters. This might be due to an incorrect API key or invalid parameter combinations.');
+          throw new Error('Invalid request parameters. This might be due to an incorrect API key or invalid parameter combinations. Please check API documentation.');
         } else if (error.message.includes('401')) {
-          throw new Error('Invalid API key. Please check your newsdata.io API key.');
+          throw new Error('Invalid API key. Please check your newsdata.io API key in the environment variables.');
         } else if (error.message.includes('429')) {
           throw new Error('Rate limit exceeded. Please wait before making another request.');
         }
