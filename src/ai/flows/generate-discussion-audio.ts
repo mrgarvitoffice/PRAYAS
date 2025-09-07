@@ -2,7 +2,7 @@
 'use server';
 /**
  * @fileoverview Defines a Genkit flow that generates a two-person dialogue script from article content.
- * It does NOT generate audio, only the text script, which is then handled by the client.
+ * It does NOT generate audio, only the text script.
  *
  * Exports:
  * - generateDiscussionAudio: The main function to handle the discussion script generation.
@@ -12,8 +12,6 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
-import type { Article } from '@/lib/types';
-
 
 const GenerateDiscussionAudioInputSchema = z.object({
   articles: z.array(z.object({
@@ -34,7 +32,14 @@ export async function generateDiscussionAudio(input: GenerateDiscussionAudioInpu
     return await generateDiscussionScriptFlow(input);
   } catch (error: any) {
     console.error("[AI Action Error - Discussion Script] Flow failed:", error);
-    let errorMessage = error.message || "An unexpected error occurred while generating the script.";
+    let errorMessage = "An unexpected error occurred while generating the script.";
+    if (error instanceof Error) {
+        if (error.message.includes('429')) {
+          errorMessage = 'You have exceeded the daily limit for script generation. Please try again tomorrow.';
+        } else {
+            errorMessage = error.message;
+        }
+    }
     throw new Error(errorMessage);
   }
 }
@@ -75,7 +80,7 @@ const generateDiscussionScriptFlow = ai.defineFlow({
 }, async ({ articles, language }) => {
 
   console.log('[AI Flow - Discussion Script] Generating dialogue script from summaries...');
-  
+
   const articleSnippets = articles.map(article => {
     return `Title: ${article.title}\nContent: ${article.content}`;
   }).join('\n\n---\n\n');
@@ -95,14 +100,14 @@ const generateDiscussionScriptFlow = ai.defineFlow({
     .map(line => line.trim())
     .filter(line => line.startsWith('Speaker1:') || line.startsWith('Speaker2:'))
     .join('\n');
-  
+
   if (!script) {
      console.error("AI generated text but it contained no valid dialogue lines. Raw output:", text);
      throw new Error("The AI failed to generate a valid script from the provided articles. The content may be too complex or short.");
   }
-  
+
   console.log('[AI Flow - Discussion Script] Dialogue script generated successfully.');
-  
+
   return {
     discussionScript: script,
   };

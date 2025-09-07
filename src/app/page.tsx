@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/dialog';
 import { translateAndSummarizeArticleHindi } from '@/ai/flows/translate-and-summarize-article-hindi';
 import { generateDiscussionAudio } from '@/ai/flows/generate-discussion-audio';
+import { generateTtsAudio } from '@/ai/flows/generate-tts-audio';
 import { useAudioPlayer } from '@/context/audio-player-context';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -87,6 +88,9 @@ const NewsApp = () => {
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
   const [isGeneratingPodcast, setIsGeneratingPodcast] = useState(false);
   const [generatedPodcastScript, setGeneratedPodcastScript] = useState<string | null>(null);
+  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
+  const [podcastAudioUrl, setPodcastAudioUrl] = useState<string | null>(null);
+
 
   const [isSpeakingHeadlines, setIsSpeakingHeadlines] = useState(false);
   const [isPausedHeadlines, setIsPausedHeadlines] = useState(false);
@@ -248,6 +252,7 @@ const NewsApp = () => {
   const handleCreatePodcast = () => {
     if (news.length > 0) {
       setGeneratedPodcastScript(null);
+      setPodcastAudioUrl(null);
       setIsPodcastModalOpen(true);
     } else {
        toast({
@@ -258,10 +263,11 @@ const NewsApp = () => {
     }
   };
 
-  const handleGeneratePodcast = async () => {
+  const handleGeneratePodcastScript = async () => {
     if (news.length === 0) return;
     setIsGeneratingPodcast(true);
     setGeneratedPodcastScript(null);
+    setPodcastAudioUrl(null);
     try {
       toast({ title: 'Generating your discussion script...', description: 'Preparing articles and writing dialogue...' });
       
@@ -269,7 +275,7 @@ const NewsApp = () => {
       
       const result = await generateDiscussionAudio({ articles: articlesForPodcast, language: filters.language });
       setGeneratedPodcastScript(result.discussionScript);
-      toast({ title: 'Discussion script generated!', description: 'You can now play it.' });
+      toast({ title: 'Discussion script generated!', description: 'You can now play it or download an HQ version.' });
     } catch (e) {
       console.error("Error generating discussion", e);
       const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
@@ -280,6 +286,28 @@ const NewsApp = () => {
       });
     } finally {
       setIsGeneratingPodcast(false);
+    }
+  };
+
+  const handleGeneratePodcastAudio = async () => {
+    if (!generatedPodcastScript) return;
+    setIsGeneratingAudio(true);
+    setPodcastAudioUrl(null);
+    try {
+      toast({ title: 'Generating High-Quality Audio...', description: 'This may take a moment...' });
+      const result = await generateTtsAudio({ script: generatedPodcastScript, language: filters.language });
+      setPodcastAudioUrl(result.audioDataUri);
+      toast({ title: 'High-Quality Audio Ready!', description: 'You can now download the audio file.' });
+    } catch (e) {
+        console.error("Error generating TTS audio", e);
+        const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
+        toast({
+            variant: "destructive",
+            title: "Audio Generation Failed",
+            description: errorMessage,
+        });
+    } finally {
+      setIsGeneratingAudio(false);
     }
   };
 
@@ -698,7 +726,7 @@ const NewsApp = () => {
               <DialogTitle>Generate Your Discussion Episode</DialogTitle>
               <DialogDescription>
                 {generatedPodcastScript
-                  ? 'Your discussion script is ready! You can now listen to it below.'
+                  ? 'Your discussion script is ready! Play it directly or generate a high-quality audio file for download.'
                   : `A discussion script will be generated from the top ${Math.min(10, news.length)} available articles.`}
               </DialogDescription>
             </DialogHeader>
@@ -715,6 +743,10 @@ const NewsApp = () => {
                     {isSpeakingPodcast && !isPausedPodcast ? <Pause className="mr-2 h-5 w-5" /> : <Play className="mr-2 h-5 w-5" />}
                     {isSpeakingPodcast && !isPausedPodcast ? 'Pause' : isPausedPodcast ? 'Resume' : 'Play Discussion'}
                   </Button>
+                   <Button onClick={handleGeneratePodcastAudio} variant="outline" size="icon" disabled={isGeneratingAudio}>
+                      {isGeneratingAudio ? <Loader2 className="h-5 w-5 animate-spin" /> : <Headphones className="h-5 w-5" />}
+                      <span className="sr-only">Generate High Quality Audio</span>
+                    </Button>
                   {(isSpeakingPodcast || isPausedPodcast) && (
                     <Button onClick={stopPodcastScript} variant="destructive" size="lg">
                        <StopCircle className="mr-2 h-5 w-5" />
@@ -725,6 +757,18 @@ const NewsApp = () => {
                  <div className="max-h-60 overflow-y-auto p-3 my-4 border rounded-md bg-slate-50 dark:bg-slate-800">
                     <p className="text-sm whitespace-pre-wrap font-mono text-slate-700 dark:text-slate-300">{generatedPodcastScript}</p>
                  </div>
+                 {podcastAudioUrl && (
+                    <div className="text-center">
+                      <a
+                        href={podcastAudioUrl}
+                        download={`Prayas_News_Discussion_${new Date().toISOString()}.wav`}
+                        className={cn(buttonVariants({ variant: 'default' }), 'w-full')}
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Download Audio
+                      </a>
+                    </div>
+                  )}
               </div>
             ) : (
               <>
@@ -747,7 +791,7 @@ const NewsApp = () => {
                 {generatedPodcastScript ? 'Close' : 'Cancel'}
               </Button>
               {!generatedPodcastScript && (
-                <Button onClick={handleGeneratePodcast} disabled={isGeneratingPodcast}>
+                <Button onClick={handleGeneratePodcastScript} disabled={isGeneratingPodcast}>
                   {isGeneratingPodcast ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rss className="mr-2 h-4 w-4" />}
                   Generate Script
                 </Button>
