@@ -31,11 +31,11 @@ export async function fetchNews(
   if (country) {
     params.country = country.toLowerCase();
   }
-
+  
+  // Newsdata.io requires either `q` or `category` when `country` is specified.
   if (category && category.toLowerCase() !== 'all') {
     params.category = category.toLowerCase();
   } else {
-    // newsdata.io requires a query `q` if category is not specified alongside country
     params.q = 'top news';
   }
 
