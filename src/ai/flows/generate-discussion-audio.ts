@@ -31,9 +31,11 @@ export async function generateDiscussionAudio(input: GenerateDiscussionAudioInpu
     return await generateDiscussionAudioFlow(input);
   } catch (error: any) {
     console.error("[AI Action Error - Discussion Audio] Flow failed:", error);
-    const errorMessage = error.message || "An unexpected error occurred.";
+    let errorMessage = error.message || "An unexpected error occurred.";
     if (errorMessage.toLowerCase().includes("dialogue script")) {
-      throw new Error("The AI failed to create a discussion script from the provided text. This can sometimes happen with very short or complex content. Please try rephrasing or using a longer text.");
+      errorMessage = "The AI failed to create a discussion script from the provided text. This can sometimes happen with very short or complex content. Please try rephrasing or using a longer text.";
+    } else if (errorMessage.includes('429')) {
+      errorMessage = 'You have exceeded the daily limit for audio generation. Please try again tomorrow.';
     }
     throw new Error(`Failed to generate discussion audio. Error: ${errorMessage}`);
   }

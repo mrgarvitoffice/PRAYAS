@@ -46,7 +46,7 @@ The user has specified the desired language as: **{{{language}}}**.
 You **MUST** write the entire dialogue script in that same language.
 - If 'en', write in English.
 - If 'hi', write in Hindi.
-- If 'bilingual', write a mix of English and Hindi for each segment, starting with an English intro.
+- If 'bilingual', create a natural mix of English and Hindi for each segment, starting with an English intro.
 
 The dialogue should be between "Speaker1" (a knowledgeable and slightly formal expert) and "Speaker2" (an inquisitive and friendly learner). Speaker1 presents the key information from an article, and Speaker2 asks clarifying questions or makes comments to guide the conversation and make it more engaging.
 
@@ -55,7 +55,7 @@ Speaker1: [First line of dialogue in specified language]
 Speaker2: [Second line of dialogue in specified language]
 ...and so on.
 
-Do NOT add any other text, introductions, summaries, or explanations. The entire output should be just the dialogue script.
+Do NOT add any other text, introductions, summaries, or explanations. The entire output must be ONLY the dialogue script.
 
 News Articles to Convert:
 ---
@@ -106,7 +106,6 @@ const generatePodcastScriptFlow = ai.defineFlow({
   }
   
   // Self-healing: Clean up the script to ensure it only contains valid dialogue lines.
-  // This is a more robust way to ensure a clean script.
   const dialogueScript = text
     .split('\n')
     .map(line => line.trim()) // Trim whitespace from each line

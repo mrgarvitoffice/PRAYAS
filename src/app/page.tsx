@@ -282,6 +282,7 @@ const NewsApp = () => {
                   return processedArticle;
              } catch (e) {
                 console.error(`Podcast pre-translation failed for ${article.id}`, e);
+                // Return original article if translation fails, so we don't block the whole process
                 return article;
              } finally {
                 setProcessingArticleIds(prev => {
@@ -295,14 +296,16 @@ const NewsApp = () => {
         })
       );
 
+      // Final check to ensure all necessary content is ready
       const allContentReady = articlesForPodcast.every(a => {
         if (podcastLanguage === 'en') return !!a.title && (a.summary || a.importantPoints?.length > 0);
         if (podcastLanguage === 'hi') return !!a.titleHi && (a.summaryHi || a.importantPointsHi?.length > 0);
+        // For bilingual, check both are ready
         return !!a.title && (a.summary || a.importantPoints?.length > 0) && !!a.titleHi && (a.summaryHi || a.importantPointsHi?.length > 0);
       });
 
       if (!allContentReady) {
-        throw new Error("Could not prepare all articles for the podcast. Some translations may have failed.");
+        throw new Error("Could not prepare all articles for the podcast. Some content or translations may be missing.");
       }
       
       toast({ title: 'Generating podcast script...', description: 'Your articles are ready, now creating the script.' });
@@ -311,10 +314,7 @@ const NewsApp = () => {
       toast({ title: 'Podcast generated successfully!', description: 'You can now play or download it.' });
     } catch (e) {
       console.error("Error generating podcast", e);
-      let errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
-      if (errorMessage.includes('429')) {
-        errorMessage = 'You have exceeded the daily limit for podcast generation. Please try again tomorrow.';
-      }
+      const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
       toast({
         variant: "destructive",
         title: "Podcast Generation Failed",

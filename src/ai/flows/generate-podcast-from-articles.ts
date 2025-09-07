@@ -32,8 +32,14 @@ export async function generatePodcastFromArticles(input: GeneratePodcastFromArti
     return await generatePodcastFromArticlesFlow(input);
  } catch (error: any) {
     console.error("[AI ACTION Error - Podcast] Flow failed:", error);
-    // Pass the specific error from the sub-flow directly to the client
-    throw new Error(`Failed to generate podcast. ${error.message}`);
+    let errorMessage = error.message || 'An unknown error occurred.';
+    if (errorMessage.includes('429')) {
+      errorMessage = 'You have exceeded the daily limit for podcast generation. Please try again tomorrow.';
+    } else if (errorMessage.toLowerCase().includes("script")) {
+       errorMessage = "The AI failed to create a podcast script from the provided articles. This can sometimes happen if the content is too short or complex.";
+    }
+    // Pass a clear, user-friendly error message.
+    throw new Error(`Failed to generate podcast. ${errorMessage}`);
   }
 }
 
