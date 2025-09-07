@@ -254,6 +254,8 @@ const NewsApp = () => {
         if (selectedVoice) {
             utterance.voice = selectedVoice;
         }
+        // Explicitly setting the language can improve pronunciation.
+        utterance.lang = filters.language === 'hi' ? 'hi-IN' : 'en-US';
         utterance.onstart = () => setCurrentSpokenIndex(index);
         utterance.onend = () => {
             if (index === textsToRead.length - 1) {
