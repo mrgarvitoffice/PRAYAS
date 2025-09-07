@@ -55,19 +55,21 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
   inputSchema: GeneratePodcastFromArticlesInputSchema,
   outputSchema: GeneratePodcastFromArticlesOutputSchema,
 }, async ({ articles, language }) => {
-  let podcastScript = '';
-
+  
   const getArticleScript = (article: Article, lang: 'en' | 'hi') => {
     const title = lang === 'en' ? article.title : article.titleHi;
-    const summary = lang === 'en' ? article.summary : article.summaryHi;
-    return `Narrator: Next up, from ${article.source.name}. Headline: Speaker1: ${title}. Narrator: ${summary}.`;
+    const summary = lang === 'en' ? (article.importantPoints.join('. ') || article.summary) : (article.importantPointsHi.join('. ') || article.summaryHi) ;
+    return `Narrator: Next up, from ${article.source.name}. Headline: Speaker1: ${title}. Narrator: ${summary}`;
   };
 
-  if (language === 'bilingual') {
-    podcastScript = articles.map(article => `${getArticleScript(article, 'en')} ${getArticleScript(article, 'hi')}`).join('\n');
-  } else {
-    podcastScript = articles.map(article => getArticleScript(article, language)).join('\n');
-  }
+  let podcastScript = articles.map(article => {
+    if (language === 'bilingual') {
+      return `${getArticleScript(article, 'en')} ${getArticleScript(article, 'hi')}`;
+    }
+    return getArticleScript(article, language as 'en' | 'hi');
+  }).join('\n');
+
+  const fullScript = `Narrator: Welcome to your AI news podcast. Here are today's top stories. ${podcastScript}`;
 
   const { media } = await ai.generate({
     model: 'googleai/gemini-2.5-flash-preview-tts',
@@ -82,7 +84,7 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
         },
       },
     },
-    prompt: `Narrator: Welcome to your AI news podcast. Here are today's top stories. ${podcastScript}`,
+    prompt: fullScript,
   });
 
   if (!media) {
@@ -94,3 +96,5 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
     audioDataUri: `data:audio/wav;base64,${await toWav(audioBuffer)}`,
   };
 });
+
+    

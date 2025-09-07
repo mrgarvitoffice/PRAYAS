@@ -25,7 +25,7 @@ import type { Article, Language } from '@/lib/types';
 import { fetchAndProcessNews } from '@/ai/flows/fetch-and-process-news';
 import { generateTTSAudioClip } from '@/ai/flows/generate-tts-audio-clip';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -213,23 +213,16 @@ const NewsApp = () => {
       } else if (filterType === 'state') {
         newFilters.city = '';
       }
-      
-      if (filterType === 'language') {
-        // Refetch and reprocess news when language changes
-         fetchNewsCallback(newFilters);
-      }
-      
       return newFilters;
     });
-  }, [fetchNewsCallback]);
+  }, []);
   
   useEffect(() => {
-    const newFilters = {...filters};
     const handler = setTimeout(() => {
-        fetchNewsCallback(newFilters);
+        fetchNewsCallback(filters);
     }, 500); // Debounce search input
     return () => clearTimeout(handler);
-  }, [filters.search, filters.region, filters.state, filters.city, filters.category, fetchNewsCallback]);
+  }, [filters, fetchNewsCallback]);
 
 
   const clearFilters = () => {
@@ -242,7 +235,6 @@ const NewsApp = () => {
       language: 'en' as Language,
     };
     setFilters(newFilters);
-    fetchNewsCallback(newFilters);
   };
 
   const availableCities = useMemo(() => {
@@ -632,3 +624,5 @@ export default function Home() {
   // The page is now a simple wrapper around NewsApp
   return <NewsApp />;
 }
+
+    
