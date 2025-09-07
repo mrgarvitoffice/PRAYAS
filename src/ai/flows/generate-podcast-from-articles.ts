@@ -31,10 +31,13 @@ export async function generatePodcastFromArticles(input: GeneratePodcastFromArti
  } catch (error: any) {
     console.error("[AI ACTION Error - Podcast] Flow failed:", error);
     let errorMessage = error.message || 'An unknown error occurred.';
-    if (errorMessage.includes('429') || (error.cause && error.cause.message.includes('500'))) {
-      errorMessage = 'You have exceeded the daily limit for podcast generation. Please try again tomorrow.';
+    // Handle specific, known error messages to make them more user-friendly.
+    if (error.message.includes('500') || error.message.includes('internal error')) {
+       errorMessage = "The audio generation service failed. This might be due to the AI-generated script being too long or complex. Please try again with fewer articles.";
     } else if (errorMessage.toLowerCase().includes("script")) {
        errorMessage = "The AI failed to create a podcast script from the provided articles. This can sometimes happen if the content is too short or complex.";
+    } else if (errorMessage.includes('429')) {
+      errorMessage = 'You have exceeded the daily limit for podcast generation. Please try again tomorrow.';
     }
     // Pass a clear, user-friendly error message.
     throw new Error(errorMessage);
@@ -116,6 +119,7 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
      throw new Error("The AI model returned no text, so a script cannot be created.");
   }
 
+  // More robust cleaning: trim each line and ensure it starts with the correct speaker tag.
   let script = text
     .split('\n')
     .map(line => line.trim())
@@ -127,13 +131,15 @@ const generatePodcastFromArticlesFlow = ai.defineFlow({
      throw new Error("The AI failed to generate a valid script from the provided articles. The content may be too complex or short.");
   }
 
-  // Truncate script if too long to prevent TTS errors
+  // CRITICAL FIX: Truncate script if it's too long to prevent TTS API from throwing a 500 error.
   if (script.length > 4000) {
     script = script.substring(0, 4000);
+    // Ensure we don't cut off a line mid-sentence.
     const lastLineEnd = script.lastIndexOf('\n');
     if (lastLineEnd > 0) {
         script = script.substring(0, lastLineEnd);
     }
+    console.log('[AI Flow - Podcast] Script was truncated to prevent TTS failure.');
   }
   
   console.log('[AI Flow - Podcast] Dialogue script generated successfully.');
