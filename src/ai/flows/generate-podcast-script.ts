@@ -68,14 +68,9 @@ const generatePodcastScriptFlow = ai.defineFlow({
 }, async ({ articles }) => {
 
   const getArticleContent = (article: Article) => {
-    // Use the content from the language that is most likely available.
-    const title = article.titleHi || article.title;
-    const summary = (article.importantPointsHi && article.importantPointsHi.length > 0)
-        ? article.importantPointsHi.join('. ')
-        : (article.importantPoints && article.importantPoints.length > 0)
-        ? article.importantPoints.join('. ')
-        : (article.summaryHi || article.summary)
-
+    // Simplify the content to just title and summary to create a cleaner prompt.
+    const title = article.title;
+    const summary = article.summary;
     return `Title: ${title}. Summary: ${summary}`;
   };
 
