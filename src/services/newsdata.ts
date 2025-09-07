@@ -32,7 +32,7 @@ export async function fetchNews(
   if (category && category.toLowerCase() !== 'all') {
     params.category = category.toLowerCase();
   } else {
-    // newsdata.io requires a query `q` if category is not specified
+    // newsdata.io requires a query `q` if category is not specified alongside country
     params.q = 'top news';
   }
 
