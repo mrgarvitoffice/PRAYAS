@@ -24,6 +24,8 @@ import {
   Trash2,
   StopCircle,
   Pause,
+  Edit,
+  Check,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -44,6 +46,8 @@ import { generateDiscussionAudio } from '@/ai/flows/generate-discussion-audio';
 import { generateTtsAudio } from '@/ai/flows/generate-tts-audio';
 import { useAudioPlayer } from '@/context/audio-player-context';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { summarizeArticlesForPodcast } from '@/ai/flows/summarize-articles-for-podcast';
+import { Textarea } from '@/components/ui/textarea';
 
 
 const INDIAN_STATES: Record<string, string[]> = {
@@ -87,6 +91,7 @@ const NewsApp = () => {
 
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
   const [podcastCandidateArticles, setPodcastCandidateArticles] = useState<Article[]>([]);
+  const [isSummarizingForPodcast, setIsSummarizingForPodcast] = useState(false);
   const [isGeneratingPodcastScript, setIsGeneratingPodcastScript] = useState(false);
   const [generatedPodcastScript, setGeneratedPodcastScript] = useState<string | null>(null);
   
@@ -251,24 +256,49 @@ const NewsApp = () => {
 
   const visibleNews = useMemo(() => news.slice(0, visibleArticlesCount), [news, visibleArticlesCount]);
   
-  const handleCreatePodcast = () => {
-    if (news.length > 0) {
-      setPodcastCandidateArticles(news.slice(0, 10));
-      setGeneratedPodcastScript(null);
-      setHqAudioDataUri(null);
-      setHqAudioError(null);
-      setIsPodcastModalOpen(true);
-    } else {
-       toast({
+  const handleCreatePodcast = async () => {
+    if (news.length === 0) {
+      toast({
         variant: "destructive",
         title: "No Articles Available",
         description: "There are no news articles to create a discussion from.",
       });
+      return;
+    }
+    
+    // Reset state and open modal
+    setIsPodcastModalOpen(true);
+    setGeneratedPodcastScript(null);
+    setHqAudioDataUri(null);
+    setHqAudioError(null);
+    setPodcastCandidateArticles([]);
+    setIsSummarizingForPodcast(true);
+
+    try {
+        toast({ title: 'Preparing articles for your podcast...', description: 'Generating initial summaries...' });
+        const articlesToSummarize = news.slice(0, 10);
+        const result = await summarizeArticlesForPodcast({ articles: articlesToSummarize });
+        setPodcastCandidateArticles(result.articles);
+        toast({ title: 'Articles Ready!', description: 'You can now edit summaries or remove articles.' });
+    } catch(e) {
+        console.error("Error summarizing articles for podcast:", e);
+        const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
+        toast({ variant: "destructive", title: "Article Preparation Failed", description: errorMessage });
+        setIsPodcastModalOpen(false); // Close modal on failure
+    } finally {
+        setIsSummarizingForPodcast(false);
     }
   };
 
+
   const removePodcastCandidate = (articleId: string) => {
     setPodcastCandidateArticles(prev => prev.filter(a => a.id !== articleId));
+  };
+  
+  const handlePodcastSummaryChange = (articleId: string, newSummary: string) => {
+    setPodcastCandidateArticles(prev => 
+        prev.map(a => a.id === articleId ? { ...a, summary: newSummary } : a)
+    );
   };
 
 
@@ -284,7 +314,8 @@ const NewsApp = () => {
     try {
       toast({ title: 'Generating your discussion script...', description: 'Preparing articles and writing dialogue...' });
       
-      const articlesForPodcast = podcastCandidateArticles.map(a => ({ title: a.title, content: a.rawContent }));
+      // Use the potentially edited summary as the content
+      const articlesForPodcast = podcastCandidateArticles.map(a => ({ title: a.title, content: a.summary }));
       
       const result = await generateDiscussionAudio({ articles: articlesForPodcast, language: filters.language });
       setGeneratedPodcastScript(result.discussionScript);
@@ -736,17 +767,22 @@ const NewsApp = () => {
         
          {/* Podcast Modal */}
         <Dialog open={isPodcastModalOpen} onOpenChange={(isOpen) => { setIsPodcastModalOpen(isOpen); if (!isOpen) stopPodcastScript(); }}>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Generate Your Discussion Episode</DialogTitle>
               <DialogDescription>
                 {generatedPodcastScript
                   ? 'Your discussion script is ready! Play it directly or generate a high-quality audio version to download.'
-                  : `Select the articles you want to include in your discussion.`}
+                  : 'Edit summaries or remove articles, then generate your discussion script.'}
               </DialogDescription>
             </DialogHeader>
-
-            {isGeneratingPodcastScript ? (
+            
+            {isSummarizingForPodcast ? (
+                <div className="flex flex-col items-center justify-center my-8">
+                    <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
+                    <p className="mt-4 text-slate-500">Preparing articles for podcast...</p>
+                </div>
+            ) : isGeneratingPodcastScript ? (
               <div className="flex flex-col items-center justify-center my-8">
                 <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
                 <p className="mt-4 text-slate-500">Generating your AI discussion, please wait...</p>
@@ -781,19 +817,25 @@ const NewsApp = () => {
               </div>
             ) : (
               <>
-                <div className="max-h-60 overflow-y-auto p-1 my-4 border rounded-md">
-                  <ul className="space-y-2">
-                    {podcastCandidateArticles.map((article, index) => (
-                      <li key={article.id} className="flex items-center justify-between p-2 rounded-md bg-muted/50 dark:bg-muted/20">
-                        <span className="truncate pr-4 text-sm">
-                          {index + 1}. {filters.language === 'hi' && article.titleHi ? article.titleHi : article.title}
-                        </span>
-                         <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-red-500" onClick={() => removePodcastCandidate(article.id)}>
-                            <Trash2 className="h-4 w-4" />
-                         </Button>
-                      </li>
-                    ))}
-                  </ul>
+                <div className="max-h-[60vh] overflow-y-auto p-1 my-4 space-y-4">
+                  {podcastCandidateArticles.map((article) => (
+                      <div key={article.id} className="p-4 rounded-lg border bg-muted/30 dark:bg-muted/20">
+                          <div className='flex items-start justify-between gap-4'>
+                              <h4 className="font-semibold text-sm mb-2 text-slate-800 dark:text-slate-100">
+                                  {filters.language === 'hi' && article.titleHi ? article.titleHi : article.title}
+                              </h4>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-red-500 flex-shrink-0" onClick={() => removePodcastCandidate(article.id)}>
+                                  <Trash2 className="h-4 w-4" />
+                              </Button>
+                          </div>
+                          <Textarea
+                              value={filters.language === 'hi' && article.summaryHi ? article.summaryHi : article.summary}
+                              onChange={(e) => handlePodcastSummaryChange(article.id, e.target.value)}
+                              className="w-full text-sm bg-white dark:bg-slate-700"
+                              rows={4}
+                           />
+                      </div>
+                  ))}
                 </div>
               </>
             )}
@@ -803,7 +845,7 @@ const NewsApp = () => {
                 {generatedPodcastScript ? 'Close' : 'Cancel'}
               </Button>
               {!generatedPodcastScript && (
-                <Button onClick={handleGeneratePodcastScript} disabled={isGeneratingPodcastScript || podcastCandidateArticles.length === 0}>
+                <Button onClick={handleGeneratePodcastScript} disabled={isGeneratingPodcastScript || isSummarizingForPodcast || podcastCandidateArticles.length === 0}>
                   {isGeneratingPodcastScript ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rss className="mr-2 h-4 w-4" />}
                   Generate Script ({podcastCandidateArticles.length})
                 </Button>
@@ -820,5 +862,3 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
-
-    
