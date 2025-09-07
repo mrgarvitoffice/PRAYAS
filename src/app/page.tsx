@@ -17,6 +17,7 @@ import {
   Loader2,
   Rss,
   Plus,
+  Download,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -34,6 +35,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { translateAndSummarizeArticleHindi } from '@/ai/flows/translate-and-summarize-article-hindi';
+import { generatePodcastFromArticles } from '@/ai/flows/generate-podcast-from-articles';
 
 const INDIAN_STATES: Record<string, string[]> = {
   'Andhra Pradesh': ['Visakhapatnam', 'Vijayawada', 'Guntur', 'Tirupati'],
@@ -73,6 +75,9 @@ const NewsApp = () => {
 
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
   const [podcastList, setPodcastList] = useState<Article[]>([]);
+  const [podcastLanguage, setPodcastLanguage] = useState<'en' | 'hi' | 'bilingual'>('en');
+  const [isGeneratingPodcast, setIsGeneratingPodcast] = useState(false);
+  const [generatedPodcastAudio, setGeneratedPodcastAudio] = useState<string | null>(null);
   
   // State for TTS playback
   const [isListeningAll, setIsListeningAll] = useState(false);
@@ -132,7 +137,7 @@ const NewsApp = () => {
       toast({ title: 'Translating articles to Hindi...', description: 'Please wait.' });
       const translatedArticles = await Promise.all(
         articles.map(async (article) => {
-          // Always re-translate if language is Hindi to ensure consistency
+          if (article.titleHi) return article; // Skip if already translated
           try {
             const hindiSummary = await translateAndSummarizeArticleHindi({
               articleTitle: article.title,
@@ -208,19 +213,36 @@ const NewsApp = () => {
       } else if (filterType === 'state') {
         newFilters.city = '';
       }
+      
+      if (filterType === 'language') {
+        // Refetch and reprocess news when language changes
+         fetchNewsCallback(newFilters);
+      }
+      
       return newFilters;
     });
-  }, []);
+  }, [fetchNewsCallback]);
+  
+  useEffect(() => {
+    const newFilters = {...filters};
+    const handler = setTimeout(() => {
+        fetchNewsCallback(newFilters);
+    }, 500); // Debounce search input
+    return () => clearTimeout(handler);
+  }, [filters.search, filters.region, filters.state, filters.city, filters.category, fetchNewsCallback]);
+
 
   const clearFilters = () => {
-    setFilters({
+    const newFilters = {
       region: 'india',
       state: '',
       city: '',
       category: '',
       search: '',
-      language: 'en',
-    });
+      language: 'en' as Language,
+    };
+    setFilters(newFilters);
+    fetchNewsCallback(newFilters);
   };
 
   const availableCities = useMemo(() => {
@@ -228,10 +250,6 @@ const NewsApp = () => {
     return INDIAN_STATES[filters.state] || [];
   }, [filters.state, filters.region]);
 
-  useEffect(() => {
-    fetchNewsCallback(filters);
-  }, [filters, fetchNewsCallback]);
-  
   const addToPodcast = (article: Article) => {
     if (!podcastList.find(p => p.id === article.id)) {
       setPodcastList(prev => [...prev, article]);
@@ -244,6 +262,7 @@ const NewsApp = () => {
   
   const handleCreatePodcast = () => {
     if(news.length > 0) {
+      setGeneratedPodcastAudio(null);
       setPodcastList(news); // Add all current articles
       setIsPodcastModalOpen(true);
     } else {
@@ -252,6 +271,47 @@ const NewsApp = () => {
         title: "No Articles to Create Podcast",
         description: "There are no articles in the current feed.",
       });
+    }
+  };
+
+  const handleGeneratePodcast = async () => {
+    if (podcastList.length === 0) return;
+    setIsGeneratingPodcast(true);
+    setGeneratedPodcastAudio(null);
+    try {
+      toast({ title: 'Generating your podcast...', description: 'This may take a minute or two.' });
+      
+      // Ensure all articles are translated if needed for bilingual or hindi podcast
+      const articlesForPodcast = await Promise.all(
+        podcastList.map(async (article) => {
+          if ((podcastLanguage === 'hi' || podcastLanguage === 'bilingual') && !article.titleHi) {
+             const hindiSummary = await translateAndSummarizeArticleHindi({
+                articleTitle: article.title,
+                articleContent: article.rawContent,
+              });
+              return {
+                ...article,
+                titleHi: hindiSummary.translatedTitle,
+                summaryHi: hindiSummary.summaryPoints.join(' '),
+                importantPointsHi: hindiSummary.summaryPoints,
+              };
+          }
+          return article;
+        })
+      );
+      
+      const result = await generatePodcastFromArticles({ articles: articlesForPodcast, language: podcastLanguage });
+      setGeneratedPodcastAudio(result.audioDataUri);
+      toast({ title: 'Podcast generated successfully!', description: 'You can now play or download it.' });
+    } catch (e) {
+      console.error("Error generating podcast", e);
+      toast({
+        variant: "destructive",
+        title: "Podcast Generation Failed",
+        description: e instanceof Error ? e.message : 'An unknown error occurred.',
+      });
+    } finally {
+      setIsGeneratingPodcast(false);
     }
   };
   
@@ -489,39 +549,77 @@ const NewsApp = () => {
       </div>
       
        {/* Podcast Modal */}
-       <Dialog open={isPodcastModalOpen} onOpenChange={setIsPodcastModalOpen}>
+      <Dialog open={isPodcastModalOpen} onOpenChange={setIsPodcastModalOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Your Podcast Episode</DialogTitle>
             <DialogDescription>
-              These {podcastList.length} articles will be included in your podcast. Choose a language to generate the audio.
+              {generatedPodcastAudio
+                ? 'Your podcast is ready! You can play it below or download it.'
+                : `These ${podcastList.length} articles will be included in your podcast. Choose a language to generate the audio.`}
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-60 overflow-y-auto p-1 my-4 border rounded-md">
-            <ul className="space-y-2">
-              {podcastList.map((article, index) => (
-                <li key={article.id} className="flex items-center justify-between p-2 rounded-md bg-muted">
-                  <span className="truncate pr-4 text-sm">
-                    {index + 1}. {filters.language === 'hi' && article.titleHi ? article.titleHi : article.title}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-           <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Podcast Language</label>
-              <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md">
+
+          {isGeneratingPodcast ? (
+            <div className="flex flex-col items-center justify-center my-8">
+              <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
+              <p className="mt-4 text-slate-500">Generating your AI podcast, please wait...</p>
+            </div>
+          ) : generatedPodcastAudio ? (
+            <div className="my-4 space-y-4">
+              <audio controls src={generatedPodcastAudio} className="w-full">
+                Your browser does not support the audio element.
+              </audio>
+              <a
+                href={generatedPodcastAudio}
+                download="prayas-podcast.wav"
+                className={cn(
+                  'w-full',
+                  buttonVariants({ variant: 'outline' })
+                )}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download Podcast
+              </a>
+            </div>
+          ) : (
+            <>
+              <div className="max-h-60 overflow-y-auto p-1 my-4 border rounded-md">
+                <ul className="space-y-2">
+                  {podcastList.map((article, index) => (
+                    <li key={article.id} className="flex items-center justify-between p-2 rounded-md bg-muted">
+                      <span className="truncate pr-4 text-sm">
+                        {index + 1}. {filters.language === 'hi' && article.titleHi ? article.titleHi : article.title}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Podcast Language</label>
+                <select
+                  value={podcastLanguage}
+                  onChange={(e) => setPodcastLanguage(e.target.value as any)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md"
+                >
                   <option value="en">English</option>
                   <option value="hi">Hindi</option>
                   <option value="bilingual">Bilingual (English+Hindi)</option>
-              </select>
-          </div>
+                </select>
+              </div>
+            </>
+          )}
+
           <DialogFooter className='mt-4'>
-            <Button variant="outline" onClick={() => {setIsPodcastModalOpen(false); setPodcastList([])}}>Clear List</Button>
-            <Button>
-              <Rss className="mr-2 h-4 w-4" />
-              Generate Podcast
+            <Button variant="outline" onClick={() => { setIsPodcastModalOpen(false); setPodcastList([]); setGeneratedPodcastAudio(null); }}>
+              {generatedPodcastAudio ? 'Close' : 'Cancel'}
             </Button>
+            {!generatedPodcastAudio && (
+              <Button onClick={handleGeneratePodcast} disabled={isGeneratingPodcast}>
+                {isGeneratingPodcast ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rss className="mr-2 h-4 w-4" />}
+                Generate Podcast
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -534,7 +632,3 @@ export default function Home() {
   // The page is now a simple wrapper around NewsApp
   return <NewsApp />;
 }
-
-    
-
-    
