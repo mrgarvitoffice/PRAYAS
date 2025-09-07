@@ -14,13 +14,15 @@ interface AudioPlayerContextType {
   isPlaying: boolean;
   isLoading: boolean;
   progress: number;
+  playlist: Article[];
   playArticle: (article: Article, language: Language) => void;
   playPlaylist: (articles: Article[], language: Language) => void;
+  addOrRemoveFromPlaylist: (article: Article) => void;
   togglePlayPause: () => void;
   stop: () => void;
   seek: (progress: number) => void;
   updateArticleInPlaylist: (article: Article) => void;
-  onArticleProcessed?: (article: Article) => void; // Optional callback
+  onArticleProcessed?: (article: Article) => void;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextType | undefined>(undefined);
@@ -44,14 +46,14 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = '';
-      setIsPlaying(false);
-      setProgress(0);
-      setCurrentArticle(null);
-      setProcessedArticle(null);
-      if (!isSoftStop) {
-          setPlaylist([]);
-          setCurrentTrackIndex(0);
-      }
+    }
+    setIsPlaying(false);
+    setProgress(0);
+    setCurrentArticle(null);
+    setProcessedArticle(null);
+    if (!isSoftStop) {
+        setPlaylist([]);
+        setCurrentTrackIndex(0);
     }
   }, []);
 
@@ -59,74 +61,83 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (playlist.length > 0 && currentTrackIndex < playlist.length - 1) {
       const nextIndex = currentTrackIndex + 1;
       setCurrentTrackIndex(nextIndex);
-      // The processAndPlayArticle function is defined below, so we can't call it directly here.
-      // The useEffect hook will handle playing the next track.
     } else {
-      // Playlist finished
       stop();
     }
   }, [playlist, currentTrackIndex, stop]);
 
-  const processAndPlayArticle = useCallback(async (article: Article, language: Language, isPlaylist: boolean) => {
-    if (!audioRef.current) return;
+  const processArticle = useCallback(async (article: Article, language: Language): Promise<Article> => {
+    let updatedArticle = { ...article };
 
-    if (currentArticle?.id !== article.id || !audioRef.current.src) {
-        stop(true); // Soft stop, doesn't clear playlist
-        setIsLoading(true);
-        setCurrentArticle(article);
-        setProcessedArticle(null);
-    } else {
-        // If it's the same article and it's loaded, just play/pause
-        if (isPlaying) {
-          audioRef.current.pause();
-        } else {
-          audioRef.current.play();
-        }
-        return;
+    const needsProcessing = (language === 'en' && !article.importantPoints?.length) || (language === 'hi' && !article.titleHi);
+    if (needsProcessing) {
+        toast({
+            title: "Generating Smart Summary...",
+            description: `Processing "${article.title}"`,
+        });
+        
+        const [englishSummary, hindiSummary] = await Promise.all([
+            summarizeArticle({ title: article.title, full_text: article.rawContent }),
+            translateAndSummarizeArticleHindi({ articleTitle: article.title, articleContent: article.rawContent })
+        ]);
+
+        updatedArticle = {
+            ...updatedArticle,
+            title: englishSummary.heading,
+            summary: englishSummary.important_points.join(' '),
+            importantPoints: englishSummary.important_points,
+            titleHi: hindiSummary.translatedTitle,
+            summaryHi: hindiSummary.summaryPoints.join(' '),
+            importantPointsHi: hindiSummary.summaryPoints,
+        };
     }
 
-    try {
-        let updatedArticle = { ...article };
-        const needsProcessing = (language === 'en' && updatedArticle.importantPoints.length === 0) || (language === 'hi' && !updatedArticle.titleHi);
-
-        if (needsProcessing) {
-            toast({
-                title: "Generating Smart Summary...",
-                description: `Processing "${article.title}"`,
-            });
-            
-            const [englishSummary, hindiSummary] = await Promise.all([
-                summarizeArticle({ title: article.title, full_text: article.rawContent }),
-                translateAndSummarizeArticleHindi({ articleTitle: article.title, articleContent: article.rawContent })
-            ]);
-
-            updatedArticle = {
-                ...updatedArticle,
-                title: englishSummary.heading,
-                summary: englishSummary.important_points.join(' '),
-                importantPoints: englishSummary.important_points,
-                titleHi: hindiSummary.translatedTitle,
-                summaryHi: hindiSummary.summaryPoints.join(' '),
-                importantPointsHi: hindiSummary.summaryPoints,
-            };
-            
-            if (onArticleProcessedRef.current) {
-                onArticleProcessedRef.current(updatedArticle);
-            }
-        }
-        
-        setProcessedArticle(updatedArticle);
-        
-        const contentToRead = language === 'hi' 
+    if (!updatedArticle.audioDataUri) {
+        const contentToRead = language === 'hi'
             ? `Title: ${updatedArticle.titleHi}. Summary: ${updatedArticle.summaryHi}`
             : `Title: ${updatedArticle.title}. Summary: ${updatedArticle.summary}`;
-            
+
         if (!contentToRead.trim()) {
             throw new Error("Cannot generate audio from empty content.");
         }
-
         const result = await generateDiscussionAudio({ content: contentToRead, language });
-        audioRef.current.src = result.audioDataUri;
+        updatedArticle.audioDataUri = result.audioDataUri;
+    }
+    
+    if (onArticleProcessedRef.current) {
+        onArticleProcessedRef.current(updatedArticle);
+    }
+
+    return updatedArticle;
+  }, [toast]);
+  
+  const togglePlayPause = useCallback(() => {
+    if (audioRef.current?.src) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+    }
+  }, [isPlaying]);
+
+  const playArticle = useCallback(async (article: Article, language: Language, isPlaylistContinuation = false) => {
+    if (!audioRef.current) return;
+
+    if (currentArticle?.id === article.id && audioRef.current.src && !isPlaylistContinuation) {
+        togglePlayPause();
+        return;
+    }
+
+    stop(true);
+    setIsLoading(true);
+    setCurrentArticle(article);
+    setProcessedArticle(null);
+
+    try {
+        const articleWithAudio = await processArticle(article, language);
+        setProcessedArticle(articleWithAudio);
+        audioRef.current.src = articleWithAudio.audioDataUri!;
         await audioRef.current.play();
 
     } catch (error) {
@@ -136,15 +147,20 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             title: 'Playback Failed',
             description: error instanceof Error ? error.message : 'Could not process or generate the audio for this article.',
         });
-        setCurrentArticle(null);
-        setProcessedArticle(null);
-        if (isPlaylist) {
+        stop();
+        if (isPlaylistContinuation) {
             playNextInPlaylist();
         }
     } finally {
         setIsLoading(false);
     }
-  }, [toast, currentArticle, isPlaying, playNextInPlaylist, stop]);
+  }, [currentArticle, processArticle, stop, playNextInPlaylist, toast, togglePlayPause]);
+
+  useEffect(() => {
+    if (playlist.length > 0 && currentTrackIndex > 0) {
+      playArticle(playlist[currentTrackIndex], playlistLanguage, true);
+    }
+  }, [currentTrackIndex, playlist, playlistLanguage, playArticle]);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !audioRef.current) {
@@ -182,45 +198,34 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [playlist, currentTrackIndex, playNextInPlaylist, stop]);
 
-  // Effect to handle playlist progression
-  useEffect(() => {
-    if (playlist.length > 0 && currentTrackIndex > 0) {
-      processAndPlayArticle(playlist[currentTrackIndex], playlistLanguage, true);
-    }
-  }, [currentTrackIndex, playlist, playlistLanguage, processAndPlayArticle]);
-  
-  const updateArticleInPlaylist = useCallback((article: Article) => {
-    setPlaylist(prev => prev.map(a => a.id === article.id ? article : a));
-    if (processedArticle?.id === article.id) {
-      setProcessedArticle(article);
-    }
-  }, [processedArticle]);
-
-  const playArticle = useCallback(async (article: Article, language: Language) => {
-    setPlaylist([]); // Clear any existing playlist
-    setCurrentTrackIndex(0);
-    setPlaylistLanguage(language);
-    processAndPlayArticle(article, language, false);
-  }, [processAndPlayArticle]);
-
   const playPlaylist = useCallback((articles: Article[], language: Language) => {
+    if (articles.length === 0) {
+        toast({ title: 'Playlist is empty', description: 'Add some articles to the playlist first.' });
+        return;
+    }
+    const unprocessedArticles = articles.filter(a => !a.audioDataUri);
+    if(unprocessedArticles.length > 2) {
+       toast({ title: `Processing ${unprocessedArticles.length} articles...`, description: 'This might take a moment. Audio will begin shortly.' });
+    }
+    
     setPlaylist(articles);
     setCurrentTrackIndex(0);
     setPlaylistLanguage(language);
-    if (articles.length > 0) {
-        processAndPlayArticle(articles[0], language, true);
-    }
-  }, [processAndPlayArticle]);
+    playArticle(articles[0], language, true);
+  }, [playArticle, toast]);
 
-  const togglePlayPause = useCallback(() => {
-    if (audioRef.current?.src) {
-      if (isPlaying) {
-        audioRef.current.pause();
-      } else {
-        audioRef.current.play();
-      }
-    }
-  }, [isPlaying]);
+  const addOrRemoveFromPlaylist = (article: Article) => {
+    setPlaylist(prev => {
+        const exists = prev.some(a => a.id === article.id);
+        if (exists) {
+            toast({ title: 'Removed from playlist', description: `"${article.title}" removed.` });
+            return prev.filter(a => a.id !== article.id);
+        } else {
+            toast({ title: 'Added to playlist', description: `"${article.title}" added.` });
+            return [...prev, article];
+        }
+    });
+  };
 
   const seek = useCallback((newProgress: number) => {
     if (audioRef.current && audioRef.current.duration) {
@@ -230,14 +235,23 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, []);
 
+  const updateArticleInPlaylist = useCallback((article: Article) => {
+    setPlaylist(prev => prev.map(a => a.id === article.id ? article : a));
+    if (processedArticle?.id === article.id) {
+      setProcessedArticle(article);
+    }
+  }, [processedArticle]);
+
   const value = {
     currentArticle,
     processedArticle,
     isPlaying,
     isLoading,
     progress,
-    playArticle,
+    playlist,
+    playArticle: (article: Article, language: Language) => playArticle(article, language, false),
     playPlaylist,
+    addOrRemoveFromPlaylist,
     togglePlayPause,
     stop,
     seek,

@@ -1,3 +1,4 @@
+
 export type Article = {
   id: string;
   title: string;
@@ -16,6 +17,7 @@ export type Article = {
   media: { image: string };
   rank_score: number;
   rawContent: string; // Added to store the full text for on-demand processing
+  audioDataUri?: string; // Optional: To cache the generated audio
 };
 
 export type LocationData = {

@@ -15,6 +15,7 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import wav from 'wav';
 import { generatePodcastScript } from './generate-podcast-script';
+import type { Article } from '@/lib/types';
 
 const GeneratePodcastFromArticlesInputSchema = z.object({
   articles: z.array(z.any()).describe('An array of article objects to include in the podcast.'),
