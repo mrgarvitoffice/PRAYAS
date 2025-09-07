@@ -22,8 +22,6 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
-import { generateTTSAudioClip } from '@/ai/flows/generate-tts-audio-clip';
-
 // Constants
 const NEWS_API_KEY = "pub_1a130cb7e5ea4cf7adf30cfca80b4199";
 const NEWS_API_BASE_URL = "https://newsdata.io/api/1/news";
@@ -71,64 +69,72 @@ const NewsApp = () => {
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
   const [podcastLanguage, setPodcastLanguage] = useState('en');
 
-  // Audio Player State
+  // Audio Player State - Simplified for SpeechSynthesis
   const [audioState, setAudioState] = useState({
     isPlaying: false,
-    isLoading: false,
     currentArticleId: null,
-    audioUrl: null,
-    progress: 0,
     isPlaylistActive: false
   });
-  const audioRef = useRef(null);
   const playlistRef = useRef([]);
   const currentTrackIndexRef = useRef(0);
 
-  // Setup Audio Element
+  // Setup SpeechSynthesis
   useEffect(() => {
-    audioRef.current = new Audio();
-    const audio = audioRef.current;
-
-    const handleTimeUpdate = () => {
-      if (audio.duration) {
-        setAudioState(s => ({ ...s, progress: (audio.currentTime / audio.duration) * 100 }));
-      }
+    const handleBeforeUnload = () => {
+      window.speechSynthesis.cancel();
     };
-    const handleEnded = () => {
-        // Play next track in playlist
-        if(audioState.isPlaylistActive) {
-            playNextInPlaylist();
-        } else {
-            setAudioState(s => ({ ...s, isPlaying: false, currentArticleId: null, progress: 0 }));
-        }
-    };
-    const handlePlay = () => setAudioState(s => ({ ...s, isPlaying: true }));
-    const handlePause = () => setAudioState(s => ({ ...s, isPlaying: false }));
-
-    audio.addEventListener('timeupdate', handleTimeUpdate);
-    audio.addEventListener('ended', handleEnded);
-    audio.addEventListener('play', handlePlay);
-    audio.addEventListener('pause', handlePause);
-
+    window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
-      audio.removeEventListener('timeupdate', handleTimeUpdate);
-      audio.removeEventListener('ended', handleEnded);
-      audio.removeEventListener('play', handlePlay);
-      audio.removeEventListener('pause', handlePause);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.speechSynthesis.cancel();
     };
-  }, [audioState.isPlaylistActive]);
+  }, []);
 
-  const playNextInPlaylist = async () => {
+
+  const playNextInPlaylist = () => {
     if (currentTrackIndexRef.current < playlistRef.current.length - 1) {
         currentTrackIndexRef.current += 1;
         const nextArticle = playlistRef.current[currentTrackIndexRef.current];
-        await playAudioForArticle(nextArticle);
+        speakHeadline(nextArticle);
     } else {
         // End of playlist
         handleStopAudio();
-        toast({ title: "Finished Playlist", description: "All news articles have been read."});
+        toast({ title: "Finished Playlist", description: "All news headlines have been read."});
     }
   }
+
+  const speakHeadline = (article) => {
+    if (!('speechSynthesis' in window)) {
+        toast({ variant: 'destructive', title: 'Speech Synthesis not supported' });
+        handleStopAudio();
+        return;
+    }
+    
+    // Stop any currently speaking utterance
+    window.speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(article.title);
+    utterance.lang = filters.language === 'hi' ? 'hi-IN' : 'en-US';
+    
+    setAudioState(s => ({ ...s, isPlaying: true, currentArticleId: article.article_id }));
+    
+    utterance.onend = () => {
+      if (audioState.isPlaylistActive) {
+        playNextInPlaylist();
+      } else {
+        handleStopAudio();
+      }
+    };
+    
+    utterance.onerror = (event) => {
+        console.error('SpeechSynthesisUtterance.onerror', event);
+        toast({ variant: 'destructive', title: 'Speech Error', description: event.error });
+        if(audioState.isPlaylistActive) playNextInPlaylist(); // Try next
+    };
+
+    window.speechSynthesis.speak(utterance);
+};
+
 
   // Get unique articles (prevent duplicates)
   const getUniqueArticles = (articles) => {
@@ -288,71 +294,47 @@ const NewsApp = () => {
     }
   }
 
-  const playAudioForArticle = async (article) => {
-    setAudioState(s => ({ ...s, isLoading: true, currentArticleId: article.article_id, progress: 0 }));
-    toast({
-        title: "Preparing audio...",
-        description: `Processing: ${article.title}`,
-        duration: 5000,
-    });
-    try {
-        const ttsResult = await generateTTSAudioClip({
-            title: article.title,
-            importantPoints: [], // Only read the headline
-            language: filters.language === 'hi' ? 'hi-IN' : 'en-IN',
-        });
-        
-        audioRef.current.src = ttsResult.audioDataUri;
-        audioRef.current.play();
-        setAudioState(s => ({ ...s, isLoading: false, audioUrl: ttsResult.audioDataUri }));
-    } catch (err) {
-        console.error('Error in listen flow:', err);
-        toast({
-            variant: 'destructive',
-            title: 'Playback Failed',
-            description: err.message || 'Could not process or generate the audio for this article.',
-        });
-        if(audioState.isPlaylistActive) {
-            playNextInPlaylist(); // Try to play next one
-        } else {
-            handleStopAudio();
-        }
-    }
-  }
-
   const handleListenAll = async () => {
-    if(audioState.isPlaying || audioState.isLoading) {
-        handleStopAudio();
-        return;
+    if (audioState.isPlaying) {
+      handleStopAudio();
+      return;
     }
-
+  
     if (news.length === 0) {
-        toast({ variant: 'destructive', title: 'No News to Play', description: 'There are no articles in the current view.' });
-        return;
+      toast({ variant: 'destructive', title: 'No News to Play', description: 'There are no articles in the current view.' });
+      return;
     }
-
+  
     playlistRef.current = news;
     currentTrackIndexRef.current = 0;
     setAudioState(s => ({ ...s, isPlaylistActive: true }));
-    toast({ title: 'Starting News Playlist', description: `Will play ${news.length} articles.` });
-    
-    await playAudioForArticle(playlistRef.current[0]);
+    toast({ title: 'Starting News Headlines', description: `Will read ${news.length} headlines.` });
+  
+    speakHeadline(playlistRef.current[0]);
   }
+  
+  const handleTogglePlayPause = () => {
+    if (window.speechSynthesis.speaking) {
+      if (audioState.isPlaying) {
+        window.speechSynthesis.pause();
+        setAudioState(s => ({ ...s, isPlaying: false }));
+      } else {
+        window.speechSynthesis.resume();
+        setAudioState(s => ({ ...s, isPlaying: true }));
+      }
+    }
+  };
 
   const handleStopAudio = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = '';
-    }
-    setAudioState({ isPlaying: false, isLoading: false, currentArticleId: null, audioUrl: null, progress: 0, isPlaylistActive: false });
+    window.speechSynthesis.cancel();
+    setAudioState({ isPlaying: false, currentArticleId: null, isPlaylistActive: false });
     playlistRef.current = [];
     currentTrackIndexRef.current = 0;
   }
 
   const renderArticleTitle = (article) => {
-    // This is a placeholder for language switching.
-    // In a real app, you would have translated titles.
     if (filters.language === 'hi') {
+      // This is a placeholder as we don't have translated titles from the API
       return `(हिं) ${article.title}`;
     }
     return article.title;
@@ -360,8 +342,8 @@ const NewsApp = () => {
   
   const renderArticleDescription = (article) => {
     const description = article.description || '';
-    // Placeholder for language switching.
     if (filters.language === 'hi') {
+       // This is a placeholder
       return `(हिं) ${description}`;
     }
     return description;
@@ -609,12 +591,12 @@ const NewsApp = () => {
       </div>
       
       {/* Audio Player */}
-      {audioState.currentArticleId && (
+      {audioState.isPlaylistActive && (
         <div className="fixed bottom-0 left-0 right-0 z-50 p-4">
             <div className="max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-2xl p-4 border border-gray-200 dark:border-gray-700">
                 <div className="flex items-center gap-4">
-                    <button onClick={() => audioState.isPlaying ? audioRef.current?.pause() : audioRef.current?.play()} className="p-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
-                      {audioState.isLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : (audioState.isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />)}
+                    <button onClick={handleTogglePlayPause} className="p-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
+                       {audioState.isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
                     </button>
                     <div className="flex-1">
                         <p className="font-bold truncate text-gray-900 dark:text-gray-100">
@@ -622,7 +604,7 @@ const NewsApp = () => {
                         </p>
                          <p className="text-xs text-gray-500 dark:text-gray-400">{audioState.isPlaylistActive ? `Playing ${currentTrackIndexRef.current + 1} of ${playlistRef.current.length}` : 'Single Article'}</p>
                         <div className="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mt-2">
-                          <div className="absolute top-0 left-0 h-2 bg-blue-600 rounded-full" style={{ width: `${audioState.progress}%` }}></div>
+                          <div className="absolute top-0 left-0 h-2 bg-blue-600 rounded-full" style={{ width: `${audioState.isPlaying ? '100%' : '0%'}` , transition: 'width 0.2s linear' }}></div>
                         </div>
                     </div>
                     <button onClick={handleStopAudio} className="p-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
@@ -676,6 +658,3 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
-
-    
-
