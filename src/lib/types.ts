@@ -17,7 +17,8 @@ export type Article = {
   media: { image: string };
   rank_score: number;
   rawContent: string; // Added to store the full text for on-demand processing
-  audioDataUri?: string; // Optional: To cache the generated audio
+  audioDataUriEn?: string; // Optional: To cache the generated English audio
+  audioDataUriHi?: string; // Optional: To cache the generated Hindi audio
 };
 
 export type LocationData = {

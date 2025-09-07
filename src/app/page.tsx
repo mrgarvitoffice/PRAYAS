@@ -98,6 +98,17 @@ const NewsApp = () => {
   
   const [visibleArticlesCount, setVisibleArticlesCount] = useState(INITIAL_ARTICLES_COUNT);
 
+  const handleArticleUpdate = useCallback((updatedArticle: Article) => {
+    setNews(prevNews => prevNews.map(a => a.id === updatedArticle.id ? updatedArticle : a));
+  }, []);
+  
+  // Connect the audio player to the main state
+  useEffect(() => {
+      audioPlayer.onArticleUpdate = handleArticleUpdate;
+      return () => { audioPlayer.onArticleUpdate = undefined; };
+  }, [audioPlayer, handleArticleUpdate]);
+
+
   useEffect(() => {
     const handleVoicesChanged = () => {
       const availableVoices = window.speechSynthesis.getVoices();
@@ -108,9 +119,6 @@ const NewsApp = () => {
     return () => window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
   }, []);
   
-  const handleArticleUpdate = useCallback((updatedArticle: Article) => {
-    setNews(prevNews => prevNews.map(a => a.id === updatedArticle.id ? updatedArticle : a));
-  }, []);
   
   const fetchNewsCallback = useCallback(async (currentFilters: typeof filters) => {
     setLoading(true);
@@ -255,8 +263,7 @@ const NewsApp = () => {
       toast({ title: 'Generating your podcast...', description: 'This may take a minute or two. Preparing articles...' });
       
       const articlesForPodcast = await Promise.all(
-        news.map(async (article) => {
-          // Process article only if the required language content is missing
+        news.slice(0, 10).map(async (article) => {
           if ((podcastLanguage === 'hi' || podcastLanguage === 'bilingual') && !article.titleHi) {
              console.log(`Translating article for podcast: ${article.id}`);
              setProcessingArticleIds(prev => new Set(prev).add(article.id));
@@ -271,12 +278,10 @@ const NewsApp = () => {
                     summaryHi: hindiSummary.summaryPoints.join(' '),
                     importantPointsHi: hindiSummary.summaryPoints,
                   };
-                  // Update the main state so the UI reflects the change
                   handleArticleUpdate(processedArticle);
                   return processedArticle;
              } catch (e) {
                 console.error(`Podcast pre-translation failed for ${article.id}`, e);
-                // Return original article on failure to avoid blocking the whole podcast
                 return article;
              } finally {
                 setProcessingArticleIds(prev => {
@@ -286,15 +291,13 @@ const NewsApp = () => {
                 });
              }
           }
-          return article; // Return as is if no translation needed
+          return article;
         })
       );
 
-      // Final check to ensure all articles have the required content now.
       const allContentReady = articlesForPodcast.every(a => {
         if (podcastLanguage === 'en') return !!a.title && (a.summary || a.importantPoints?.length > 0);
         if (podcastLanguage === 'hi') return !!a.titleHi && (a.summaryHi || a.importantPointsHi?.length > 0);
-        // Bilingual requires both
         return !!a.title && (a.summary || a.importantPoints?.length > 0) && !!a.titleHi && (a.summaryHi || a.importantPointsHi?.length > 0);
       });
 
@@ -308,10 +311,14 @@ const NewsApp = () => {
       toast({ title: 'Podcast generated successfully!', description: 'You can now play or download it.' });
     } catch (e) {
       console.error("Error generating podcast", e);
+      let errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
+      if (errorMessage.includes('429')) {
+        errorMessage = 'You have exceeded the daily limit for podcast generation. Please try again tomorrow.';
+      }
       toast({
         variant: "destructive",
         title: "Podcast Generation Failed",
-        description: e instanceof Error ? e.message : 'An unknown error occurred.',
+        description: errorMessage,
       });
     } finally {
       setIsGeneratingPodcast(false);
@@ -555,8 +562,8 @@ const NewsApp = () => {
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
                 {visibleNews.map((article) => {
-                  const isCurrentlyPlaying = audioPlayer.currentArticle?.id === article.id && audioPlayer.isPlaying;
-                  const isCurrentlyLoadingAudio = audioPlayer.currentArticle?.id === article.id && audioPlayer.isLoading;
+                  const isCurrentlyPlaying = audioPlayer.currentArticleId === article.id && audioPlayer.isPlaying;
+                  const isCurrentlyLoadingAudio = audioPlayer.currentArticleId === article.id && audioPlayer.isLoading;
                   const isCurrentlyProcessingText = processingArticleIds.has(article.id);
                   
                   const title = filters.language === 'hi' && article.titleHi ? article.titleHi : article.title;
@@ -564,6 +571,7 @@ const NewsApp = () => {
                   const importantPoints = filters.language === 'hi' && article.importantPointsHi.length > 0 ? article.importantPointsHi : article.importantPoints;
                   const isLoading = isCurrentlyLoadingAudio || isCurrentlyProcessingText;
 
+                  const hasAudio = filters.language === 'en' ? !!article.audioDataUriEn : !!article.audioDataUriHi;
                   const needsProcessing = (filters.language === 'en' && article.importantPoints.length === 0) || (filters.language === 'hi' && !article.titleHi);
 
                   return (
@@ -624,7 +632,7 @@ const NewsApp = () => {
                           <button onClick={() => audioPlayer.playArticle(article, filters.language)} disabled={isLoading || isSpeakingHeadlines} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Listen to Article">
                               {isLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Headphones className="w-5 h-5"/>}
                           </button>
-                          {needsProcessing && !article.audioDataUri && (
+                          {needsProcessing && !hasAudio && (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Info className="w-4 h-4 text-blue-500 cursor-help" />
@@ -669,7 +677,7 @@ const NewsApp = () => {
               <DialogDescription>
                 {generatedPodcastAudio
                   ? 'Your podcast is ready! You can now play it below or download it.'
-                  : `A podcast will be generated from all ${news.length} available articles. Choose a language for the audio.`}
+                  : `A podcast will be generated from the top ${Math.min(10, news.length)} available articles. Choose a language for the audio.`}
               </DialogDescription>
             </DialogHeader>
 
@@ -699,7 +707,7 @@ const NewsApp = () => {
               <>
                 <div className="max-h-60 overflow-y-auto p-1 my-4 border rounded-md">
                   <ul className="space-y-2">
-                    {news.map((article, index) => (
+                    {news.slice(0, 10).map((article, index) => (
                       <li key={article.id} className="flex items-center justify-between p-2 rounded-md bg-muted">
                         <span className="truncate pr-4 text-sm">
                           {index + 1}. {filters.language === 'hi' && article.titleHi ? article.titleHi : article.title}
