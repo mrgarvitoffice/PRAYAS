@@ -77,33 +77,49 @@ const NewsApp = () => {
   });
   const playlistRef = useRef([]);
   const currentTrackIndexRef = useRef(0);
+  const [femaleVoice, setFemaleVoice] = useState(null);
 
-  // Setup SpeechSynthesis
+  // Setup SpeechSynthesis & select a female voice
   useEffect(() => {
     const handleBeforeUnload = () => {
       window.speechSynthesis.cancel();
     };
+
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      const selectedVoice = voices.find(v => v.name.toLowerCase().includes('female') && v.lang.startsWith(filters.language === 'hi' ? 'hi' : 'en')) || voices.find(v => v.name.toLowerCase().includes('female')) || null;
+      setFemaleVoice(selectedVoice);
+    };
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+      loadVoices();
+    }
+    
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      window.speechSynthesis.cancel();
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.onvoiceschanged = null;
+        window.speechSynthesis.cancel();
+      }
     };
-  }, []);
+  }, [filters.language]);
 
 
   const playNextInPlaylist = () => {
     if (currentTrackIndexRef.current < playlistRef.current.length - 1) {
         currentTrackIndexRef.current += 1;
         const nextArticle = playlistRef.current[currentTrackIndexRef.current];
-        speakHeadline(nextArticle);
+        speakArticle(nextArticle);
     } else {
         // End of playlist
         handleStopAudio();
-        toast({ title: "Finished Playlist", description: "All news headlines have been read."});
+        toast({ title: "Finished Playlist", description: "All news articles have been read."});
     }
   }
 
-  const speakHeadline = (article) => {
+  const speakArticle = (article) => {
     if (!('speechSynthesis' in window)) {
         toast({ variant: 'destructive', title: 'Speech Synthesis not supported' });
         handleStopAudio();
@@ -113,8 +129,13 @@ const NewsApp = () => {
     // Stop any currently speaking utterance
     window.speechSynthesis.cancel();
     
-    const utterance = new SpeechSynthesisUtterance(article.title);
+    const textToSpeak = `${article.title}. ${article.description || ''}`;
+    const utterance = new SpeechSynthesisUtterance(textToSpeak);
     utterance.lang = filters.language === 'hi' ? 'hi-IN' : 'en-US';
+
+    if (femaleVoice) {
+      utterance.voice = femaleVoice;
+    }
     
     setAudioState(s => ({ ...s, isPlaying: true, currentArticleId: article.article_id }));
     
@@ -308,9 +329,9 @@ const NewsApp = () => {
     playlistRef.current = news;
     currentTrackIndexRef.current = 0;
     setAudioState(s => ({ ...s, isPlaylistActive: true }));
-    toast({ title: 'Starting News Headlines', description: `Will read ${news.length} headlines.` });
+    toast({ title: 'Starting News Reading', description: `Will read ${news.length} articles.` });
   
-    speakHeadline(playlistRef.current[0]);
+    speakArticle(playlistRef.current[0]);
   }
   
   const handleTogglePlayPause = () => {
