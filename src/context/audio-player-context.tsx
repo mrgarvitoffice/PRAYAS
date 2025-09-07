@@ -9,14 +9,15 @@ import { useToast } from '@/hooks/use-toast';
 
 interface AudioPlayerContextType {
   currentArticle: Article | null;
-  processedArticle: Article | null; // Store the processed article with summaries
+  processedArticle: Article | null;
   isPlaying: boolean;
   isLoading: boolean;
   progress: number;
-  playArticle: (article: Article, language: Language) => void;
+  playArticle: (article: Article, language: Language, onArticleProcessed: (article: Article) => void) => void;
   togglePlayPause: () => void;
   stop: () => void;
   seek: (progress: number) => void;
+  updateArticleInList: (article: Article) => void;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextType | undefined>(undefined);
@@ -29,6 +30,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [progress, setProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const { toast } = useToast();
+  const [articles, setArticles] = useState<Article[]>([]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -42,8 +44,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       };
       const handleEnded = () => {
         setIsPlaying(false);
-        setCurrentArticle(null);
-        setProcessedArticle(null);
+        // Don't clear current article to allow re-play
       };
       const handlePlay = () => setIsPlaying(true);
       const handlePause = () => setIsPlaying(false);
@@ -62,68 +63,99 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       };
     }
   }, []);
+  
+  const updateArticleInList = useCallback((article: Article) => {
+    setArticles(prev => prev.map(a => a.id === article.id ? article : a));
+  }, []);
 
-  const playArticle = useCallback(async (article: Article, language: Language) => {
+  const playArticle = useCallback(async (article: Article, language: Language, onArticleProcessed: (article: Article) => void) => {
     if (audioRef.current) {
+      if (currentArticle?.id === article.id) {
+        if (isPlaying) {
+          audioRef.current.pause();
+        } else {
+          audioRef.current.play();
+        }
+        return;
+      }
+
       setIsLoading(true);
       setCurrentArticle(article);
-      setProcessedArticle(null); // Clear previous processed article
+      setProcessedArticle(null);
       setProgress(0);
       setIsPlaying(false);
-
-      toast({
-        title: "Generating Smart Summary...",
-        description: "Please wait while we process and prepare the audio.",
-        duration: 10000,
-      });
-
+      
       try {
-        // Step 1: Summarize in English and Hindi (on-demand)
-        const [englishSummary, hindiSummary] = await Promise.all([
-          summarizeArticle({
-            title: article.title,
-            full_text: article.rawContent,
-          }),
-          translateAndSummarizeArticleHindi({
-            articleTitle: article.title,
-            articleContent: article.rawContent,
-          })
-        ]);
+        let finalTitle = article.title;
+        let finalPoints = article.importantPoints;
+        let updatedArticle = { ...article };
 
-        const updatedArticle = {
-          ...article,
-          title: englishSummary.heading,
-          titleHi: hindiSummary.translatedTitle,
-          importantPoints: englishSummary.important_points,
-          importantPointsHi: hindiSummary.summaryPoints,
-          summary: englishSummary.important_points.join(' '),
-          summaryHi: hindiSummary.summaryPoints.join(' '),
-        };
-        setProcessedArticle(updatedArticle);
+        const needsProcessing = (language === 'hi' && !article.titleHi) || (language === 'en' && article.importantPoints.length === 0);
 
-        // Step 2: Generate TTS from the processed content
+        if (needsProcessing) {
+          toast({
+            title: "Generating Smart Summary...",
+            description: "Please wait while we process and prepare the audio.",
+          });
+          const [englishSummary, hindiSummary] = await Promise.all([
+            summarizeArticle({
+              title: article.title,
+              full_text: article.rawContent,
+            }),
+            translateAndSummarizeArticleHindi({
+              articleTitle: article.title,
+              articleContent: article.rawContent,
+            })
+          ]);
+          
+          updatedArticle = {
+            ...article,
+            title: englishSummary.heading,
+            titleHi: hindiSummary.translatedTitle,
+            importantPoints: englishSummary.important_points,
+            importantPointsHi: hindiSummary.summaryPoints,
+            summary: englishSummary.important_points.join(' '),
+            summaryHi: hindiSummary.summaryPoints.join(' '),
+          };
+          
+          onArticleProcessed(updatedArticle);
+          setProcessedArticle(updatedArticle);
+
+        } else {
+          setProcessedArticle(article);
+        }
+        
+        finalTitle = language === 'hi' ? updatedArticle.titleHi : updatedArticle.title;
+        finalPoints = language === 'hi' ? updatedArticle.importantPointsHi : updatedArticle.importantPoints;
+        
+        if(!finalTitle || finalPoints.length === 0) {
+            throw new Error("Content for TTS is not available after processing.")
+        }
+        
         const ttsInput = {
-          title: language === 'hi' ? updatedArticle.titleHi : updatedArticle.title,
-          importantPoints: language === 'hi' ? updatedArticle.importantPointsHi : updatedArticle.importantPoints,
+          title: finalTitle,
+          importantPoints: finalPoints,
           language: language === 'hi' ? 'hi-IN' : 'en-IN',
         };
 
         const result = await generateTTSAudioClip(ttsInput);
         audioRef.current.src = result.audioDataUri;
         audioRef.current.play();
+
       } catch (error) {
         console.error('On-demand processing or TTS Generation failed:', error);
         toast({
           variant: 'destructive',
           title: 'Playback Failed',
-          description: 'Could not process or generate the audio for this article.',
+          description: error instanceof Error ? error.message : 'Could not process or generate the audio for this article.',
         });
         setCurrentArticle(null);
+        setProcessedArticle(null);
       } finally {
         setIsLoading(false);
       }
     }
-  }, [toast]);
+  }, [toast, currentArticle, isPlaying]);
 
   const togglePlayPause = useCallback(() => {
     if (audioRef.current?.src) {
@@ -164,6 +196,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     togglePlayPause,
     stop,
     seek,
+    updateArticleInList
   };
 
   return <AudioPlayerContext.Provider value={value}>{children}</AudioPlayerContext.Provider>;
@@ -176,3 +209,5 @@ export const useAudioPlayer = (): AudioPlayerContextType => {
   }
   return context;
 };
+
+    

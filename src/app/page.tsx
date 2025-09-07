@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Search,
   Filter,
@@ -12,22 +12,20 @@ import {
   AlertCircle,
   Languages,
   Play,
-  Plus,
-  Loader2,
   Podcast,
+  Loader2,
   Rss,
-  Pause,
-  StopCircle
+  Plus,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useAudioPlayer } from '@/context/audio-player-context';
+import type { Article, Language } from '@/lib/types';
+import { fetchAndProcessNews } from '@/ai/flows/fetch-and-process-news';
+import { AudioPlayer } from '@/components/audio-player';
+import { ThemeToggle } from '@/components/theme-toggle';
 
-// Constants
-const NEWS_API_KEY = "pub_1a130cb7e5ea4cf7adf30cfca80b4199";
-const NEWS_API_BASE_URL = "https://newsdata.io/api/1/news";
-
-// Indian states and major cities
-const INDIAN_STATES = {
+const INDIAN_STATES: Record<string, string[]> = {
   'Andhra Pradesh': ['Visakhapatnam', 'Vijayawada', 'Guntur', 'Tirupati'],
   'Assam': ['Guwahati', 'Dibrugarh', 'Jorhat', 'Silchar'],
   'Bihar': ['Patna', 'Gaya', 'Muzaffarpur', 'Darbhanga'],
@@ -50,231 +48,81 @@ const INDIAN_STATES = {
 };
 
 const NewsApp = () => {
-  const [news, setNews] = React.useState([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState('');
-  const [filters, setFilters] = React.useState({
+  const [news, setNews] = useState<Article[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [filters, setFilters] = useState({
     region: 'india', // 'india', 'world'
     state: '',
     city: '',
     category: '',
     search: '',
-    language: 'en'
+    language: 'en' as Language,
   });
-  const [nextPage, setNextPage] = React.useState(null);
-  const [seenArticles, setSeenArticles] = React.useState(new Set());
   const { toast } = useToast();
+  const { playArticle, currentArticle, isLoading: isAudioLoading, updateArticleInList } = useAudioPlayer();
 
-  // Podcast State
   const [isPodcastModalOpen, setIsPodcastModalOpen] = useState(false);
-  const [podcastLanguage, setPodcastLanguage] = useState('en');
-
-  // Audio Player State - Simplified for SpeechSynthesis
-  const [audioState, setAudioState] = useState({
-    isPlaying: false,
-    currentArticleId: null,
-    isPlaylistActive: false
-  });
-  const playlistRef = useRef([]);
-  const currentTrackIndexRef = useRef(0);
-  const [femaleVoice, setFemaleVoice] = useState(null);
-  // Using a ref for isPlaylistActive to avoid stale closure issues in onend callback
-  const playlistActiveRef = useRef(audioState.isPlaylistActive);
-  useEffect(() => {
-    playlistActiveRef.current = audioState.isPlaylistActive;
-  }, [audioState.isPlaylistActive]);
-
-  // Setup SpeechSynthesis & select a female voice
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      window.speechSynthesis.cancel();
-    };
-
-    const loadVoices = () => {
-      const voices = window.speechSynthesis.getVoices();
-      const selectedVoice = voices.find(v => v.name.toLowerCase().includes('female') && v.lang.startsWith(filters.language === 'hi' ? 'hi' : 'en')) || voices.find(v => v.name.toLowerCase().includes('female')) || null;
-      setFemaleVoice(selectedVoice);
-    };
-
-    if ('speechSynthesis' in window) {
-      // onvoiceschanged event might not fire on all browsers/platforms, so we call it once
-      loadVoices();
-      window.speechSynthesis.onvoiceschanged = loadVoices;
-    }
-    
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.onvoiceschanged = null;
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, [filters.language]);
-
-
-  const playNextInPlaylist = () => {
-    if (currentTrackIndexRef.current < playlistRef.current.length - 1) {
-        currentTrackIndexRef.current += 1;
-        const nextArticle = playlistRef.current[currentTrackIndexRef.current];
-        speakArticle(nextArticle);
-    } else {
-        // End of playlist
-        handleStopAudio();
-        toast({ title: "Finished Playlist", description: "All news articles have been read."});
-    }
+  const [podcastList, setPodcastList] = useState<Article[]>([]);
+  
+  const handleArticleUpdate = (updatedArticle: Article) => {
+    setNews(currentNews => 
+      currentNews.map(a => a.id === updatedArticle.id ? updatedArticle : a)
+    );
+    updateArticleInList(updatedArticle);
   }
 
-  const speakArticle = (article) => {
-    if (!('speechSynthesis' in window)) {
-        toast({ variant: 'destructive', title: 'Speech Synthesis not supported' });
-        handleStopAudio();
-        return;
-    }
-    
-    // Stop any currently speaking utterance
-    window.speechSynthesis.cancel();
-    
-    const textToSpeak = `${article.title}. ${article.description || ''}`;
-    const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    utterance.lang = filters.language === 'hi' ? 'hi-IN' : 'en-US';
-
-    if (femaleVoice) {
-      utterance.voice = femaleVoice;
-    }
-    
-    setAudioState(s => ({ ...s, isPlaying: true, currentArticleId: article.article_id }));
-    
-    utterance.onend = () => {
-      if (playlistActiveRef.current) {
-        playNextInPlaylist();
-      } else {
-        handleStopAudio();
-      }
-    };
-    
-    utterance.onerror = (event) => {
-        console.error('SpeechSynthesisUtterance.onerror', event);
-        toast({ variant: 'destructive', title: 'Speech Error', description: event.error });
-        if(playlistActiveRef.current) playNextInPlaylist(); // Try next
-    };
-
-    window.speechSynthesis.speak(utterance);
-};
-
-
-  // Get unique articles (prevent duplicates)
-  const getUniqueArticles = (articles) => {
-    const uniqueArticles = [];
-    const seen = new Set(seenArticles);
-
-    articles.forEach(article => {
-      const identifier = `${article.title?.toLowerCase().trim()}-${article.description?.toLowerCase().slice(0, 100).trim()}`;
-      if (!seen.has(identifier) && article.title && article.title.trim() !== '') {
-        seen.add(identifier);
-        uniqueArticles.push(article);
-      }
-    });
-
-    setSeenArticles(seen);
-    return uniqueArticles;
-  };
-
-  // Build API URL based on filters
-  const buildApiUrl = (isLoadMore = false) => {
-    let url = `${NEWS_API_BASE_URL}?apikey=${NEWS_API_KEY}&size=10&language=en`;
-
-    if (filters.region === 'india') {
-      url += '&country=in';
-    } else if (filters.region === 'world') {
-      url += '&country=us,gb,ca,au,de';
-    }
-
-    let queryParts = [];
-    if (filters.state) queryParts.push(`"${filters.state}"`);
-    if (filters.city) queryParts.push(`"${filters.city}"`);
-    if (filters.search.trim()) queryParts.push(`"${filters.search.trim()}"`);
-
-    if (queryParts.length > 0) {
-      url += `&q=${encodeURIComponent(queryParts.join(' AND '))}`;
-    }
-
-    if (filters.category) {
-      url += `&category=${filters.category}`;
-    }
-
-    if (isLoadMore && nextPage) {
-      url += `&page=${nextPage}`;
-    }
-
-    return url;
-  };
-  
-  const fetchNewsCallback = useCallback(async (isLoadMore = false) => {
-    if (loading && !isLoadMore) return;
-
+  const fetchNewsCallback = useCallback(async () => {
     setLoading(true);
-    if (!isLoadMore) {
-        setError('');
-    }
-
+    setError('');
     try {
-        const url = buildApiUrl(isLoadMore);
-        console.log('Fetching from:', url);
+      const countryCode = filters.region === 'world' ? 'us' : 'in';
+      const fetchedArticles = await fetchAndProcessNews({
+        category: filters.category || 'all',
+        country: countryCode,
+        state: filters.state || 'All',
+        city: filters.city || 'All',
+      });
+      
+      let processedArticles = fetchedArticles.filter(a => a.title && (a.rawContent || a.summary));
+      
+      if (filters.search.trim()) {
+          const searchTerm = filters.search.trim().toLowerCase();
+          processedArticles = processedArticles.filter(article => 
+              article.title.toLowerCase().includes(searchTerm) ||
+              article.summary.toLowerCase().includes(searchTerm)
+          );
+      }
+      
+      setNews(processedArticles);
 
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (data.status === 'error') {
-            const errorMessage = data.results?.message || 'Failed to fetch news';
-            throw new Error(errorMessage);
-        }
-
-        if (!data.results || data.results.length === 0) {
-            if (!isLoadMore) setNews([]);
-            setNextPage(null);
-            if (!isLoadMore) setError('No news articles found for the selected filters.');
-            return;
-        }
-
-        const uniqueArticles = getUniqueArticles(data.results);
-
-        if (isLoadMore) {
-            setNews(prev => [...prev, ...uniqueArticles]);
-        } else {
-            setNews(uniqueArticles);
-            setSeenArticles(new Set(uniqueArticles.map(a => `${a.title?.toLowerCase().trim()}-${a.description?.toLowerCase().slice(0, 100).trim()}`)));
-        }
-
-        setNextPage(data.nextPage);
+      if (processedArticles.length === 0) {
+        setError('No news articles found for the selected filters.');
+      }
 
     } catch (err) {
-        console.error('Error fetching news:', err);
-        setError(`Failed to load news: ${err.message}`);
-        if (!isLoadMore) setNews([]);
+      console.error('Error fetching news:', err);
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(`Failed to load news: ${errorMessage}`);
+      setNews([]);
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
-  }, [filters, nextPage, loading]);
+  }, [filters.region, filters.state, filters.city, filters.category, filters.search]);
 
-
-  // Handle filter changes
-  const handleFilterChange = (filterType, value) => {
+  const handleFilterChange = (filterType: string, value: string) => {
     setFilters(prev => {
       const newFilters = { ...prev, [filterType]: value };
-
       if (filterType === 'region') {
         newFilters.state = '';
         newFilters.city = '';
       } else if (filterType === 'state') {
         newFilters.city = '';
       }
-
       return newFilters;
     });
   };
 
-  // Clear all filters
   const clearFilters = () => {
     setFilters({
       region: 'india',
@@ -282,9 +130,8 @@ const NewsApp = () => {
       city: '',
       category: '',
       search: '',
-      language: 'en'
+      language: 'en',
     });
-    setSeenArticles(new Set());
   };
 
   const availableCities = useMemo(() => {
@@ -294,161 +141,106 @@ const NewsApp = () => {
 
   useEffect(() => {
     const handler = setTimeout(() => {
-        fetchNewsCallback();
-    }, 500);
+      fetchNewsCallback();
+    }, 500); // Debounce API calls
 
-    return () => {
-        clearTimeout(handler);
-    };
-  }, [filters.region, filters.state, filters.city, filters.category, filters.search]);
-
-
-  // Initial load
-  useEffect(() => {
-    fetchNewsCallback();
-  }, []);
+    return () => clearTimeout(handler);
+  }, [fetchNewsCallback]);
   
-  // Podcast handlers
+  const addToPodcast = (article: Article) => {
+    if (!podcastList.find(p => p.id === article.id)) {
+      setPodcastList(prev => [...prev, article]);
+      toast({
+        title: "Added to Podcast",
+        description: `"${filters.language === 'hi' ? article.titleHi : article.title}" has been added to your episode.`,
+      });
+    }
+  };
+  
   const handleCreatePodcast = () => {
-    if (news.length > 0) {
-        setIsPodcastModalOpen(true);
+    if(news.length > 0) {
+      setPodcastList(news); // Add all current articles
+      setIsPodcastModalOpen(true);
     } else {
-        toast({
-            variant: "destructive",
-            title: "No Articles to Create a Podcast",
-            description: "Please load some news articles first.",
-        });
-    }
-  }
-
-  const handleListenAll = async () => {
-    if (audioState.isPlaying) {
-      handleStopAudio();
-      return;
-    }
-  
-    if (news.length === 0) {
-      toast({ variant: 'destructive', title: 'No News to Play', description: 'There are no articles in the current view.' });
-      return;
-    }
-  
-    playlistRef.current = news;
-    currentTrackIndexRef.current = 0;
-    setAudioState(s => ({ ...s, isPlaylistActive: true }));
-    toast({ title: 'Starting News Reading', description: `Will read ${news.length} articles.` });
-  
-    speakArticle(playlistRef.current[0]);
-  }
-  
-  const handleTogglePlayPause = () => {
-    if (window.speechSynthesis.speaking) {
-      if (audioState.isPlaying) {
-        window.speechSynthesis.pause();
-        setAudioState(s => ({ ...s, isPlaying: false }));
-      } else {
-        window.speechSynthesis.resume();
-        setAudioState(s => ({ ...s, isPlaying: true }));
-      }
+       toast({
+        variant: "destructive",
+        title: "No Articles to Create Podcast",
+        description: "There are no articles in the current feed.",
+      });
     }
   };
 
-  const handleStopAudio = () => {
-    window.speechSynthesis.cancel();
-    setAudioState({ isPlaying: false, currentArticleId: null, isPlaylistActive: false });
-    playlistRef.current = [];
-    currentTrackIndexRef.current = 0;
-  }
-
-  const renderArticleTitle = (article) => {
-    if (filters.language === 'hi') {
-      // This is a placeholder as we don't have translated titles from the API
-      return `(हिं) ${article.title}`;
-    }
-    return article.title;
-  }
-  
-  const renderArticleDescription = (article) => {
-    const description = article.description || '';
-    if (filters.language === 'hi') {
-       // This is a placeholder
-      return `(हिं) ${description}`;
-    }
-    return description;
-  }
-  
-  const currentPlayingTitle = useMemo(() => {
-    if (!audioState.currentArticleId) return "No audio playing";
-    const article = news.find(a => a.article_id === audioState.currentArticleId);
-    if (!article) return "Loading title...";
-    return article.title;
-  }, [audioState.currentArticleId, news]);
-
-
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Header */}
-        <header className="flex justify-between items-center mb-8">
-            <div>
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-1 font-headline">News Central</h1>
-                <p className="text-gray-600 dark:text-gray-400">Your daily brief, powered by AI</p>
-            </div>
-            <div className="flex items-center gap-2">
-                <button onClick={handleListenAll} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg transform hover:-translate-y-0.5" disabled={loading}>
-                    {audioState.isPlaylistActive ? <StopCircle className="w-5 h-5"/> : <Play className="w-5 h-5"/>}
-                    <span>{audioState.isPlaylistActive ? 'Stop Listening' : 'Listen to All'}</span>
-                </button>
-                <button onClick={handleCreatePodcast} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
-                    <Podcast className="w-5 h-5"/>
-                    <span>Create Podcast</span>
-                </button>
-            </div>
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 transition-colors duration-300">
+      <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+          <div>
+            <h1 className="text-4xl font-bold text-slate-900 dark:text-white font-headline tracking-tight">
+              Prayas News Terminal
+            </h1>
+            <p className="text-slate-500 dark:text-slate-400 mt-1">
+              Your AI-powered daily briefing for current affairs.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+             <Button variant="outline" onClick={handleCreatePodcast}>
+              <Podcast className="mr-2 h-4 w-4" />
+              Create Podcast
+            </Button>
+            <ThemeToggle />
+          </div>
         </header>
 
-
-        {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6 transition-colors duration-300">
+        <div className="bg-white dark:bg-slate-800/50 rounded-lg shadow-sm p-6 mb-6 border border-slate-200 dark:border-slate-700/50">
           <div className="flex items-center gap-2 mb-4">
-            <Filter className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Filters</h2>
+            <Filter className="w-5 h-5 text-indigo-500" />
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Filters</h2>
             <button
               onClick={clearFilters}
               className="ml-auto text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-500 flex items-center gap-1"
             >
               <X className="w-4 h-4" />
-              Clear All
+              Clear
             </button>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            {/* Region Filter */}
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                <Search className="w-4 h-4 inline mr-1" />
+                Search
+              </label>
+              <input
+                type="text"
+                value={filters.search}
+                onChange={(e) => handleFilterChange('search', e.target.value)}
+                placeholder="Search by keyword..."
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 <Globe className="w-4 h-4 inline mr-1" />
                 Region
               </label>
               <select
                 value={filters.region}
                 onChange={(e) => handleFilterChange('region', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="india">India</option>
                 <option value="world">World</option>
               </select>
             </div>
-
-            {/* State & City Filters */}
             {filters.region === 'india' && (
               <>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    <MapPin className="w-4 h-4 inline mr-1" />
-                    State
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    <MapPin className="w-4 h-4 inline mr-1" /> State
                   </label>
                   <select
                     value={filters.state}
                     onChange={(e) => handleFilterChange('state', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     <option value="">All States</option>
                     {Object.keys(INDIAN_STATES).map(state => (
@@ -457,14 +249,12 @@ const NewsApp = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    City
-                  </label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">City</label>
                   <select
                     value={filters.city}
                     onChange={(e) => handleFilterChange('city', e.target.value)}
                     disabled={!filters.state}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
                   >
                     <option value="">All Cities</option>
                     {availableCities.map(city => (
@@ -474,214 +264,194 @@ const NewsApp = () => {
                 </div>
               </>
             )}
-
-            {/* Category Filter */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Category
-              </label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Category</label>
               <select
                 value={filters.category}
                 onChange={(e) => handleFilterChange('category', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="">All</option>
                 <option value="politics">Politics</option>
                 <option value="business">Business</option>
                 <option value="technology">Technology</option>
                 <option value="sports">Sports</option>
-                <option value="entertainment">Entertainment</option>
               </select>
             </div>
-            
-            {/* Language Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+             <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 <Languages className="w-4 h-4 inline mr-1" />
                 Language
               </label>
               <select
                 value={filters.language}
                 onChange={(e) => handleFilterChange('language', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="en">English</option>
                 <option value="hi">Hindi</option>
               </select>
             </div>
-            
-            {/* Search Filter */}
-            <div className={cn("lg:col-span-5", filters.region === 'india' ? 'lg:col-span-2' : 'lg:col-span-3')}>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                <Search className="w-4 h-4 inline mr-1" />
-                Search
-              </label>
-              <input
-                type="text"
-                value={filters.search}
-                onChange={(e) => handleFilterChange('search', e.target.value)}
-                placeholder="Search news..."
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
           </div>
         </div>
 
-        {/* Loading & Error States */}
-        {loading && news.length === 0 && (
+        {loading ? (
           <div className="text-center py-12">
-            <Loader2 className="w-12 h-12 text-blue-600 dark:text-blue-400 animate-spin mx-auto" />
-            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading news...</p>
+            <Loader2 className="w-12 h-12 text-indigo-600 dark:text-indigo-400 animate-spin mx-auto" />
+            <p className="mt-4 text-slate-600 dark:text-slate-400">Loading news...</p>
           </div>
-        )}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 rounded-lg flex items-start gap-3">
+        ) : error ? (
+           <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 rounded-lg flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
             <div>
               <h3 className="text-sm font-medium text-red-800 dark:text-red-200">Error Loading News</h3>
               <p className="text-sm text-red-700 dark:text-red-300 mt-1">{error}</p>
             </div>
           </div>
-        )}
+        ) : news.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+            {news.map((article) => {
+              const isThisAudioLoading = currentArticle?.id === article.id && isAudioLoading;
+              const title = filters.language === 'hi' && article.titleHi ? article.titleHi : article.title;
+              const summary = filters.language === 'hi' && article.summaryHi ? article.summaryHi : article.summary;
 
-        {/* News Articles */}
-        <div className="space-y-6">
-          {news.map((article) => (
-            <article
-              key={article.article_id}
-              className={cn(
-                "bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden",
-                audioState.currentArticleId === article.article_id && "ring-2 ring-blue-500"
-              )}
-            >
-              <div className="flex flex-col lg:flex-row gap-6 p-6">
-                {article.image_url && (
-                  <div className="lg:w-64 flex-shrink-0">
-                    <img
-                      src={article.image_url}
-                      alt={article.title}
-                      className="w-full h-48 lg:h-full object-cover rounded-lg"
-                      onError={(e) => { e.target.style.display = 'none'; }}
-                    />
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 leading-tight mb-2 font-headline">
-                    {renderArticleTitle(article)}
-                  </h2>
-                  <div className="flex items-center flex-wrap gap-x-4 gap-y-2 text-sm text-gray-500 dark:text-gray-400 mb-3">
-                    {article.source_id && (
-                      <span className="font-medium text-blue-600 dark:text-blue-400">{article.source_id}</span>
-                    )}
-                    {article.pubDate && (
-                      <div className="flex items-center gap-1"><Calendar className="w-4 h-4" /><span>{new Date(article.pubDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' })}</span></div>
-                    )}
-                    {article.category && (
-                      <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-xs capitalize">{article.category[0]}</span>
-                    )}
-                  </div>
-                  <p className="text-gray-700 dark:text-gray-300 leading-relaxed line-clamp-3">
-                    {renderArticleDescription(article)}
-                  </p>
-                </div>
-              </div>
-              <div className="bg-gray-50 dark:bg-gray-800/50 p-4 flex items-center justify-end border-t border-gray-200 dark:border-gray-700">
-                <a href={article.link} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1">
-                  Read More <ExternalLink className="w-4 h-4" />
-                </a>
-              </div>
-            </article>
-          ))}
-        </div>
-
-        {/* Load More & No Results */}
-        <div className="text-center mt-8">
-            {news.length > 0 && nextPage && !loading && (
-                <button onClick={() => fetchNewsCallback(true)} className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5">
-                    Load More News
-                </button>
-            )}
-            {loading && news.length > 0 && (
-                <div className="inline-flex items-center gap-2 text-gray-600 dark:text-gray-400">
-                    <Loader2 className="w-6 h-6 animate-spin"/>
-                    <span>Loading more...</span>
-                </div>
-            )}
-            {!loading && news.length === 0 && !error && (
-                <div className="text-center py-12">
-                    <Search className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No news found</h3>
-                    <p className="text-gray-600 dark:text-gray-400 mb-4">Try adjusting your filters to find more articles.</p>
-                </div>
-            )}
-        </div>
-      </div>
-      
-      {/* Audio Player */}
-      {audioState.isPlaylistActive && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 p-4">
-            <div className="max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-2xl p-4 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center gap-4">
-                    <button onClick={handleTogglePlayPause} className="p-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
-                       {audioState.isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
-                    </button>
-                    <div className="flex-1">
-                        <p className="font-bold truncate text-gray-900 dark:text-gray-100">
-                            {currentPlayingTitle}
-                        </p>
-                         <p className="text-xs text-gray-500 dark:text-gray-400">{audioState.isPlaylistActive ? `Playing ${currentTrackIndexRef.current + 1} of ${playlistRef.current.length}` : 'Single Article'}</p>
-                        <div className="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mt-2">
-                          <div className="absolute top-0 left-0 h-2 bg-blue-600 rounded-full" style={{ width: `${audioState.isPlaying ? '100%' : '0%'}` , transition: 'width 0.2s linear' }}></div>
-                        </div>
+              return (
+                <article
+                  key={article.id}
+                  className={cn(
+                    "bg-white dark:bg-slate-800/50 rounded-xl shadow-md hover:shadow-2xl transition-all duration-300 flex flex-col overflow-hidden border border-slate-200 dark:border-slate-700/50 group",
+                    currentArticle?.id === article.id && "ring-2 ring-indigo-500"
+                  )}
+                >
+                  {article.media.image && (
+                    <div className="relative h-48 w-full overflow-hidden">
+                      <a href={article.contentUrl} target="_blank" rel="noopener noreferrer">
+                        <img
+                          src={article.media.image}
+                          alt={title}
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = `https://picsum.photos/600/400?random=${article.id}`;
+                          }}
+                        />
+                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                      </a>
                     </div>
-                    <button onClick={handleStopAudio} className="p-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
-                        <StopCircle className="h-6 w-6" />
-                    </button>
-                </div>
-            </div>
-        </div>
-      )}
-
-      {/* Podcast Modal */}
-      {isPodcastModalOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl p-6 w-full max-w-lg mx-4">
-                  <div className="flex justify-between items-center mb-4">
-                      <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 font-headline">Create Podcast Episode</h2>
-                      <button onClick={() => setIsPodcastModalOpen(false)} className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"><X className="w-6 h-6"/></button>
+                  )}
+                  <div className="p-6 flex-1 flex flex-col">
+                    <h2 className="text-xl font-bold text-slate-800 dark:text-white leading-tight mb-3 font-headline line-clamp-3">
+                       <a href={article.contentUrl} target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+                        {title}
+                       </a>
+                    </h2>
+                     <div className="flex items-center flex-wrap gap-x-4 gap-y-2 text-xs text-slate-500 dark:text-slate-400 mb-4">
+                      {article.source.name && (
+                        <span className="font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">{article.source.name}</span>
+                      )}
+                       <span className="text-slate-400 dark:text-slate-500">•</span>
+                      {article.publishedAt && (
+                        <div className="flex items-center gap-1.5"><Calendar className="w-3 h-3" /><span>{article.publishedAt}</span></div>
+                      )}
+                     
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-4 flex-1">
+                      {summary}
+                    </p>
                   </div>
-                  <div className="space-y-4">
-                      <p className="text-sm text-gray-600 dark:text-gray-400">This will generate a podcast including all <strong>{news.length}</strong> currently loaded articles.</p>
-                      <ul className="space-y-2 max-h-60 overflow-y-auto pr-2 border-y dark:border-gray-700 py-2">
-                          {news.map((article, index) => (
-                              <li key={article.article_id} className="p-2 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center justify-between">
-                                  <span className="font-medium text-sm text-gray-800 dark:text-gray-200 truncate">{index + 1}. {article.title}</span>
-                              </li>
-                          ))}
-                      </ul>
-                      <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Podcast Language</label>
-                          <select value={podcastLanguage} onChange={e => setPodcastLanguage(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md">
-                              <option value="en">English</option>
-                              <option value="hi">Hindi</option>
-                              <option value="bilingual">Bilingual (English+Hindi)</option>
-                          </select>
-                      </div>
-                      <div className="flex justify-end gap-3 pt-4">
-                          <button onClick={() => setIsPodcastModalOpen(false)} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors">Cancel</button>
-                          <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2">
-                              <Rss className="w-5 h-5"/>
-                              Generate Podcast
-                          </button>
-                      </div>
+                  <div className="bg-slate-50 dark:bg-slate-800 p-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700/50">
+                    <div className="flex items-center gap-2">
+                       <button onClick={() => addToPodcast(article)} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors" aria-label="Add to Podcast">
+                          <Plus className="w-5 h-5"/>
+                       </button>
+                       <a href={article.contentUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 flex items-center gap-1.5">
+                          Read More <ExternalLink className="w-4 h-4" />
+                       </a>
+                    </div>
+                    <Button
+                      onClick={() => playArticle(article, filters.language, handleArticleUpdate)}
+                      disabled={isThisAudioLoading}
+                    >
+                      {isThisAudioLoading ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Play className="mr-2 h-4 w-4" />
+                      )}
+                      Listen
+                    </Button>
                   </div>
-              </div>
+                </article>
+              );
+            })}
           </div>
-      )}
+        ) : (
+           <div className="text-center py-20">
+              <Rss className="w-16 h-16 mx-auto text-slate-400 mb-4" />
+              <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-2">No news found</h3>
+              <p className="text-slate-600 dark:text-slate-400 mb-4">Try adjusting your filters to find articles.</p>
+            </div>
+        )}
+      </div>
+      <AudioPlayer language={filters.language} />
+      
+       {/* Podcast Modal */}
+       <Dialog open={isPodcastModalOpen} onOpenChange={setIsPodcastModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Your Podcast Episode</DialogTitle>
+            <DialogDescription>
+              These {podcastList.length} articles will be included in your podcast. Choose a language to generate the audio.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-60 overflow-y-auto p-1 my-4 border rounded-md">
+            <ul className="space-y-2">
+              {podcastList.map((article, index) => (
+                <li key={article.id} className="flex items-center justify-between p-2 rounded-md bg-muted">
+                  <span className="truncate pr-4 text-sm">
+                    {index + 1}. {filters.language === 'hi' && article.titleHi ? article.titleHi : article.title}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+           <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Podcast Language</label>
+              <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md">
+                  <option value="en">English</option>
+                  <option value="hi">Hindi</option>
+                  <option value="bilingual">Bilingual (English+Hindi)</option>
+              </select>
+          </div>
+          <DialogFooter className='mt-4'>
+            <Button variant="outline" onClick={() => {setIsPodcastModalOpen(false); setPodcastList([])}}>Clear List</Button>
+            <Button>
+              <Rss className="mr-2 h-4 w-4" />
+              Generate Podcast
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
+
+import { AudioPlayerProvider } from '@/context/audio-player-context';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+
 export default function Home() {
-  return <NewsApp />;
+  return (
+    <AudioPlayerProvider>
+      <NewsApp />
+    </AudioPlayerProvider>
+  );
 }
+
+    
