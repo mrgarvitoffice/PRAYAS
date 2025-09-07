@@ -66,8 +66,9 @@ const generateTTSAudioClipFlow = ai.defineFlow({
       language,
     } = input;
 
-    // Construct the prompt for TTS
-    const promptText = `${title}. Important points: ${importantPoints.join(', ')}.`;
+    // Construct the prompt for TTS, now it can be a single description or multiple points
+    const contentToRead = importantPoints.join(' ');
+    const promptText = `${title}. ${contentToRead}`;
 
     const {
       media

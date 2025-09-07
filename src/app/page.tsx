@@ -22,8 +22,6 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
-import { summarizeArticle } from '@/ai/flows/summarize-article';
-import { translateAndSummarizeArticleHindi } from '@/ai/flows/translate-and-summarize-article-hindi';
 import { generateTTSAudioClip } from '@/ai/flows/generate-tts-audio-clip';
 
 // Constants
@@ -293,34 +291,24 @@ const NewsApp = () => {
   const playAudioForArticle = async (article) => {
     setAudioState(s => ({ ...s, isLoading: true, currentArticleId: article.article_id, progress: 0 }));
     toast({
-        title: "Generating Smart Summary...",
+        title: "Preparing audio...",
         description: `Processing: ${article.title}`,
-        duration: 10000,
+        duration: 5000,
     });
     try {
-        const full_text = article.content || article.description || '';
-        if (!full_text) {
-            throw new Error("Article content is not available for summarization.");
+        const textToRead = article.description || article.content || '';
+        if (!textToRead) {
+            throw new Error("Article content is not available to read.");
         }
-        let summaryData;
-        if (filters.language === 'hi') {
-            const result = await translateAndSummarizeArticleHindi({
-                articleTitle: article.title,
-                articleContent: full_text,
-            });
-            summaryData = { title: result.translatedTitle, importantPoints: result.summaryPoints };
-        } else {
-            const result = await summarizeArticle({
-                title: article.title,
-                full_text: full_text,
-            });
-            summaryData = { title: result.heading, importantPoints: result.important_points };
-        }
+
+        // We are not generating a summary here, just using the description.
+        // The importantPoints will be the single description string.
         const ttsResult = await generateTTSAudioClip({
-            title: summaryData.title,
-            importantPoints: summaryData.importantPoints,
+            title: article.title,
+            importantPoints: [textToRead], // Pass description as the single "important point"
             language: filters.language === 'hi' ? 'hi-IN' : 'en-IN',
         });
+        
         audioRef.current.src = ttsResult.audioDataUri;
         audioRef.current.play();
         setAudioState(s => ({ ...s, isLoading: false, audioUrl: ttsResult.audioDataUri }));
