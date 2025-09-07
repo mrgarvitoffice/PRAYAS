@@ -28,12 +28,12 @@ export async function fetchNews(
     country: country.toLowerCase(),
   });
 
-  // NewsData.io requires `q` OR `category`, but not both when `country` is specified.
+  // NewsData.io requires `q` OR `category` when `country` is specified.
   if (category && category.toLowerCase() !== 'all') {
     params.set('category', category.toLowerCase());
   } else {
-    // Use a general query for the 'All' category.
-    params.set('q', 'top');
+    // Use a general query for the 'All' category, as `q` is required if `category` is not present.
+    params.set('q', 'news');
   }
 
   const url = `${API_BASE_URL}?${params.toString()}`;
@@ -46,6 +46,7 @@ export async function fetchNews(
         'Accept': 'application/json',
         'User-Agent': 'Mozilla/5.0 (compatible; PrayasNewsApp/1.0)',
       },
+      next: { revalidate: 3600 } // Cache for 1 hour
     });
 
     if (!response.ok) {
