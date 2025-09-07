@@ -44,52 +44,34 @@ export async function generateDiscussionAudio(input: GenerateDiscussionAudioInpu
   }
 }
 
-const summarizationPrompt = ai.definePrompt({
-    name: 'summarizeArticlesForScriptPrompt',
-    model: 'googleai/gemini-2.5-flash-lite',
-    input: { schema: z.object({ articleSnippets: z.string(), language: z.string() }) },
-    output: { format: 'text' },
-    prompt: `You are an expert news editor. Your task is to synthesize the key information from the following news articles into a single, cohesive summary. The summary should be concise and highlight the most important points from all articles combined.
-
-**CRUCIAL INSTRUCTION: LANGUAGE ADHERENCE**
-The user has specified the desired language as: **{{{language}}}**.
-You **MUST** write the entire summary in that same language.
-
-News Article Snippets:
----
-{{{articleSnippets}}}
----
-
-Please provide only the synthesized summary below.`
-});
-
-
 const dialoguePrompt = ai.definePrompt({
     name: 'generateDiscussionScriptPrompt',
     model: 'googleai/gemini-2.5-flash-lite',
-    input: { schema: z.object({ summary: z.string(), language: z.string() }) },
+    input: { schema: z.object({ combinedSummaries: z.string(), language: z.string() }) },
     output: { format: 'text' },
-    prompt: `You are an expert multilingual podcast scriptwriter. Your primary task is to convert the following news summary into a natural-sounding, two-person dialogue script.
+    prompt: `You are an expert multilingual podcast scriptwriter. Your primary task is to convert the following collection of news summaries into a natural-sounding, two-person dialogue script.
 
 **CRUCIAL INSTRUCTION: LANGUAGE ADHERENCE**
 The user has specified the desired language as: **{{{language}}}**.
 You **MUST** write the entire dialogue script in that same language.
 
-The dialogue should be between "Speaker1" (a knowledgeable and slightly formal expert) and "Speaker2" (an inquisitive and friendly learner). Speaker1 presents the key information from the summary, and Speaker2 asks clarifying questions or makes comments to guide the conversation.
+The dialogue should be between "Speaker1" (a knowledgeable and slightly formal expert) and "Speaker2" (an inquisitive and friendly learner). Speaker1 should introduce and explain the topics from the summaries, and Speaker2 should ask clarifying questions or make comments to guide the conversation.
+
+**IMPORTANT:** The length of the dialogue should be proportional to the amount of content provided. If there are many summaries, create a longer, more detailed discussion. If there are only a few, keep it brief. Touch on each of the topics provided.
 
 **CRITICAL FORMATTING RULE:** The output MUST be a script formatted *exactly* like this, with each line starting with "Speaker1:" or "Speaker2:".
-Speaker1: [First line of dialogue in detected language]
-Speaker2: [Second line of dialogue in detected language]
+Speaker1: [First line of dialogue in specified language]
+Speaker2: [Second line of dialogue in specified language]
 ...and so on.
 
 Do NOT add any other text, introductions, or explanations. The entire output must be ONLY the dialogue script.
 
-News Summary:
+News Summaries:
 ---
-{{{summary}}}
+{{{combinedSummaries}}}
 ---
 
-Please provide the dialogue script below in the specified language.`
+Please provide the dialogue script below in the specified language, ensuring its length reflects the amount of source material.`
 });
 
 
@@ -99,23 +81,17 @@ const generateDiscussionScriptFlow = ai.defineFlow({
   outputSchema: GenerateDiscussionAudioOutputSchema,
 }, async ({ articles, language }) => {
 
-  const articleSnippets = articles.map(article => {
-    return `Title: ${article.title}\nContent: ${article.content}`;
+  const combinedSummaries = articles.map(article => {
+    return `Topic: ${article.title}\nSummary: ${article.content}`;
   }).join('\n\n---\n\n');
 
-  if (!articleSnippets.trim()) {
+  if (!combinedSummaries.trim()) {
     throw new Error("Cannot generate script from empty or invalid article content.");
   }
 
-  console.log('[AI Flow - Discussion Script] Generating unified summary...');
-  const { text: summary } = await summarizationPrompt({ articleSnippets, language });
-  if (!summary) {
-    throw new Error("The AI model returned no summary, so a script cannot be created.");
-  }
-  console.log('[AI Flow - Discussion Script] Summary generated. Now generating dialogue script...');
+  console.log('[AI Flow - Discussion Script] Generating dialogue script directly from summaries...');
 
-
-  const { text: dialogue } = await dialoguePrompt({ summary, language });
+  const { text: dialogue } = await dialoguePrompt({ combinedSummaries, language });
 
   if (!dialogue) {
      throw new Error("The AI model returned no text, so a script cannot be created.");
@@ -142,7 +118,6 @@ const generateDiscussionScriptFlow = ai.defineFlow({
       script = script.substring(0, lastNewline);
     }
   }
-
 
   console.log('[AI Flow - Discussion Script] Dialogue script generated successfully.');
 

@@ -312,12 +312,15 @@ const NewsApp = () => {
     setHqAudioDataUri(null);
     setHqAudioError(null);
     try {
-      toast({ title: 'Generating your discussion script...', description: 'Preparing articles and writing dialogue...' });
+      toast({ title: 'Generating your discussion script...', description: 'This may take a moment...' });
       
-      // Use the potentially edited summary as the content
-      const articlesForPodcast = podcastCandidateArticles.map(a => ({ title: a.title, content: a.summary }));
+      // Use the potentially edited summary as the content for the script
+      const articlesForScript = podcastCandidateArticles.map(a => ({ 
+          title: a.title, 
+          content: a.summary // Pass the final summary
+      }));
       
-      const result = await generateDiscussionAudio({ articles: articlesForPodcast, language: filters.language });
+      const result = await generateDiscussionAudio({ articles: articlesForScript, language: filters.language });
       setGeneratedPodcastScript(result.discussionScript);
       toast({ title: 'Discussion script generated!', description: 'You can now play it or download an HQ version.' });
     } catch (e) {
