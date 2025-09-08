@@ -363,45 +363,66 @@ const NewsApp = () => {
 
   const readAllHeadlines = useCallback(() => {
     if (isSpeakingHeadlines && !isPausedHeadlines) {
-      window.speechSynthesis.pause();
-      setIsPausedHeadlines(true);
-      return;
+        window.speechSynthesis.pause();
+        setIsPausedHeadlines(true);
+        return;
     }
 
     if (isPausedHeadlines) {
-      window.speechSynthesis.resume();
-      setIsPausedHeadlines(false);
-      return;
+        window.speechSynthesis.resume();
+        setIsPausedHeadlines(false);
+        return;
     }
 
-    const textsToSpeak = visibleNews.map(a => {
+    const textsToSpeak: {text: string, lang: string}[] = [];
+    visibleNews.forEach((a, i) => {
         const title = filters.language === 'hi' && a.titleHi ? a.titleHi : a.title;
+        let content;
         if (filters.language === 'hi') {
-          const summary = a.summaryHi ? a.summaryHi : a.summary;
-          return `${title}. ${summary}`;
+            content = a.summaryHi ? a.summaryHi : a.summary;
         } else {
-          const points = a.importantPoints.length > 0 ? a.importantPoints.join('. ') : a.summary;
-          return `${title}. ${points}`;
+            content = a.importantPoints.length > 0 ? a.importantPoints.join('. ') : a.summary;
         }
-      }).filter(Boolean);
+        
+        textsToSpeak.push({ text: `${title}. ${content}`, lang: filters.language });
+
+        if (i < visibleNews.length - 1) {
+            const separatorText = filters.language === 'hi' ? 'अगला।' : 'Next.';
+            textsToSpeak.push({ text: separatorText, lang: filters.language });
+        }
+    });
 
     if (textsToSpeak.length === 0) {
-      toast({ title: 'No content to read', description: 'There are no articles with headlines or summaries to read out.' });
-      return;
+        toast({ title: 'No content to read', description: 'There are no articles with headlines or summaries to read out.' });
+        return;
     }
 
-    const langCode = 'hi-IN'; // Always use Hindi voice
-    const femaleVoice = voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('female'));
-    const bestVoice = femaleVoice ||
-                      voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('google')) ||
-                      voices.find(v => v.lang === langCode && v.name.toLowerCase().includes('natural')) ||
-                      voices.find(v => v.lang === langCode && v.localService) ||
-                      voices.find(v => v.lang === langCode);
+    const langCodeHi = 'hi-IN';
+    const langCodeEn = 'en-IN';
 
-    const utterances = textsToSpeak.map((text, index) => {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = langCode;
-        if (bestVoice) utterance.voice = bestVoice;
+    const getVoice = (lang: string) => {
+      const targetLangCode = lang === 'hi' ? langCodeHi : langCodeEn;
+      const allVoices = window.speechSynthesis.getVoices();
+      const femaleVoice = allVoices.find(v => v.lang === targetLangCode && v.name.toLowerCase().includes('female'));
+      return femaleVoice ||
+             allVoices.find(v => v.lang === targetLangCode && v.name.toLowerCase().includes('google')) ||
+             allVoices.find(v => v.lang === targetLangCode && v.name.toLowerCase().includes('natural')) ||
+             allVoices.find(v => v.lang === targetLangCode && v.localService) ||
+             allVoices.find(v => v.lang === targetLangCode);
+    }
+
+    const voiceHi = getVoice('hi');
+    const voiceEn = getVoice('en');
+
+    const utterances = textsToSpeak.map((item, index) => {
+        const utterance = new SpeechSynthesisUtterance(item.text);
+        if (item.lang === 'hi') {
+            utterance.lang = langCodeHi;
+            if (voiceHi) utterance.voice = voiceHi;
+        } else {
+            utterance.lang = langCodeEn;
+            if (voiceEn) utterance.voice = voiceEn;
+        }
 
         utterance.onstart = () => {
             setIsSpeakingHeadlines(true);
@@ -434,7 +455,6 @@ const NewsApp = () => {
     setIsPausedHeadlines(false);
     window.speechSynthesis.cancel();
     utterances.forEach(u => window.speechSynthesis.speak(u));
-
   }, [visibleNews, filters.language, toast, voices, isSpeakingHeadlines, isPausedHeadlines]);
   
   const stopReadingHeadlines = () => {
@@ -465,9 +485,16 @@ const NewsApp = () => {
 
     const langCode = filters.language === 'hi' ? 'hi-IN' : 'en-IN';
     const allVoices = window.speechSynthesis.getVoices().filter(v => v.lang === langCode);
-    const voice1 = allVoices.find(v => v.name.toLowerCase().includes('google')) || allVoices[0];
-    const voice2 = allVoices.find(v => v.name.toLowerCase().includes('natural') || v.name.toLowerCase().includes('female')) || allVoices[1] || allVoices[0];
-
+    
+    let voice1, voice2;
+    if (filters.language === 'hi') {
+        voice1 = allVoices.find(v => v.name.toLowerCase().includes('male')) || allVoices[0];
+        voice2 = allVoices.find(v => v.name.toLowerCase().includes('female')) || allVoices[1] || allVoices[0];
+    } else {
+        voice1 = allVoices.find(v => v.name.toLowerCase().includes('google') && !v.name.toLowerCase().includes('female')) || allVoices.find(v => v.name.toLowerCase().includes('male')) || allVoices[0];
+        voice2 = allVoices.find(v => v.name.toLowerCase().includes('female')) || allVoices[1] || allVoices[0];
+    }
+    
     const lines = generatedPodcastScript.split('\n').filter(line => line.startsWith('Speaker1:') || line.startsWith('Speaker2:'));
     const utterances = lines.map((line, index) => {
       const isSpeaker1 = line.startsWith('Speaker1:');
@@ -501,7 +528,7 @@ const NewsApp = () => {
     setIsSpeakingPodcast(true);
     setIsPausedPodcast(false);
     utterances.forEach(u => window.speechSynthesis.speak(u));
-  }, [generatedPodcastScript, filters.language, toast, isSpeakingPodcast, isPausedPodcast]);
+  }, [generatedPodcastScript, filters.language, toast, isSpeakingPodcast, isPausedPodcast, voices]);
 
   const stopPodcastScript = useCallback(() => {
     window.speechSynthesis.cancel();
@@ -530,7 +557,7 @@ const NewsApp = () => {
                 Your AI-powered daily briefing for current affairs.
               </p>
             </div>
-             <div className="flex items-center gap-2">
+             <div className="flex items-center justify-end flex-wrap gap-2 w-full sm:w-auto">
                 <Button variant="outline" onClick={readAllHeadlines} disabled={visibleNews.length === 0 || audioPlayer.isPlaying}>
                     {isSpeakingHeadlines && !isPausedHeadlines ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
                     {isSpeakingHeadlines && !isPausedHeadlines ? 'Pause' : isPausedHeadlines ? 'Resume' : 'Read Headlines'}
@@ -879,5 +906,3 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
-
-    
