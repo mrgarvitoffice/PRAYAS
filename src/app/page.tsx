@@ -766,18 +766,9 @@ const NewsApp = () => {
             ) : generatedPodcastScript ? (
               <div className="my-4 space-y-4">
                 <div className="flex items-center justify-center gap-4">
-                    <Button onClick={playPodcastScript} variant="outline" size="lg">
-                        {isSpeakingPodcast && !isPausedPodcast ? <Pause className="mr-2 h-5 w-5" /> : <Play className="mr-2 h-5 w-5" />}
-                        {isSpeakingPodcast && !isPausedPodcast ? 'Pause' : isPausedPodcast ? 'Resume' : 'Play Discussion'}
-                    </Button>
-                    {(isSpeakingPodcast || isPausedPodcast) && (
-                        <Button onClick={stopPodcastScript} variant="destructive" size="icon">
-                           <StopCircle className="h-5 w-5" />
-                        </Button>
-                    )}
                      <Button onClick={handleGeneratePodcastAudio} variant="outline" size="lg" disabled={isGeneratingHqAudio || !generatedPodcastScript}>
                         {isGeneratingHqAudio ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> :  <Headphones className="mr-2 h-4 w-4" />}
-                         {isGeneratingHqAudio ? 'Generating...' : 'HQ Audio'}
+                         {isGeneratingHqAudio ? 'Generating...' : 'Create Podcast'}
                     </Button>
                 </div>
                  { hqAudioError && <p className="text-sm text-red-500 text-center">{hqAudioError}</p> }
@@ -844,5 +835,7 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
+
+    
 
     
