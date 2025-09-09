@@ -100,11 +100,6 @@ const NewsApp = () => {
   const [isGeneratingHqAudio, setIsGeneratingHqAudio] = useState(false);
   const [hqAudioDataUri, setHqAudioDataUri] = useState<string | null>(null);
   const [hqAudioError, setHqAudioError] = useState<string | null>(null);
-
-  const [isSpeakingHeadlines, setIsSpeakingHeadlines] = useState(false);
-  const [isPausedHeadlines, setIsPausedHeadlines] = useState(false);
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const headlineUtterancesRef = useRef<SpeechSynthesisUtterance[]>([]);
   
   const [isSpeakingPodcast, setIsSpeakingPodcast] = useState(false);
   const [isPausedPodcast, setIsPausedPodcast] = useState(false);
@@ -129,17 +124,6 @@ const NewsApp = () => {
   }, [audioPlayer, handleArticleUpdate]);
 
 
-  useEffect(() => {
-    const handleVoicesChanged = () => {
-      const availableVoices = window.speechSynthesis.getVoices();
-      setVoices(availableVoices);
-    };
-    window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
-    handleVoicesChanged();
-    return () => window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
-  }, []);
-  
-  
   const fetchNewsCallback = useCallback(async (currentFilters: typeof filters) => {
     setLoading(true);
     setError('');
@@ -195,6 +179,7 @@ const NewsApp = () => {
         importantPointsHi: hindiSummary.summaryPoints,
       };
       handleArticleUpdate(processedArticle);
+      return processedArticle;
     } catch (e) {
       console.error(`Failed to process article ${article.id} for display`, e);
       toast({
@@ -202,6 +187,7 @@ const NewsApp = () => {
         title: "Translation Failed",
         description: `Could not translate "${article.title.slice(0, 30)}..."`,
       });
+       return null;
     } finally {
        setProcessingArticleIds(prev => {
         const newSet = new Set(prev);
@@ -366,111 +352,6 @@ const NewsApp = () => {
     }
   };
 
-  const readAllHeadlines = useCallback(() => {
-    if (isSpeakingHeadlines && !isPausedHeadlines) {
-        window.speechSynthesis.pause();
-        setIsPausedHeadlines(true);
-        return;
-    }
-
-    if (isPausedHeadlines) {
-        window.speechSynthesis.resume();
-        setIsPausedHeadlines(false);
-        return;
-    }
-
-    const textsToSpeak: {text: string, lang: string}[] = [];
-    visibleNews.forEach((a, i) => {
-        const title = filters.language === 'hi' && a.titleHi ? a.titleHi : a.title;
-        let content;
-        if (filters.language === 'hi') {
-            content = a.summaryHi ? a.summaryHi : a.summary;
-        } else {
-            content = a.importantPoints.length > 0 ? a.importantPoints.join('. ') : a.summary;
-        }
-        
-        textsToSpeak.push({ text: `${title}. ${content}`, lang: filters.language });
-
-        if (i < visibleNews.length - 1) {
-            const separatorText = filters.language === 'hi' ? 'अगला।' : 'Next.';
-            textsToSpeak.push({ text: separatorText, lang: filters.language });
-        }
-    });
-
-    if (textsToSpeak.length === 0) {
-        toast({ title: 'No content to read', description: 'There are no articles with headlines or summaries to read out.' });
-        return;
-    }
-
-    const langCodeHi = 'hi-IN';
-    const langCodeEn = 'en-IN';
-
-    const getVoice = (lang: string) => {
-      const targetLangCode = lang === 'hi' ? langCodeHi : langCodeEn;
-      const allVoices = window.speechSynthesis.getVoices();
-      const femaleVoice = allVoices.find(v => v.lang === targetLangCode && v.name.toLowerCase().includes('female'));
-      return femaleVoice ||
-             allVoices.find(v => v.lang === targetLangCode && v.name.toLowerCase().includes('google')) ||
-             allVoices.find(v => v.lang === targetLangCode && v.name.toLowerCase().includes('natural')) ||
-             allVoices.find(v => v.lang === targetLangCode && v.localService) ||
-             allVoices.find(v => v.lang === targetLangCode);
-    }
-
-    const voiceHi = getVoice('hi');
-    const voiceEn = getVoice('en');
-
-    const utterances = textsToSpeak.map((item, index) => {
-        const utterance = new SpeechSynthesisUtterance(item.text);
-        if (item.lang === 'hi') {
-            utterance.lang = langCodeHi;
-            if (voiceHi) utterance.voice = voiceHi;
-        } else {
-            utterance.lang = langCodeEn;
-            if (voiceEn) utterance.voice = voiceEn;
-        }
-
-        utterance.onstart = () => {
-            setIsSpeakingHeadlines(true);
-            setIsPausedHeadlines(false);
-        };
-        
-        utterance.onend = () => {
-            if (index === textsToSpeak.length - 1) {
-                setIsSpeakingHeadlines(false);
-                setIsPausedHeadlines(false);
-                headlineUtterancesRef.current = [];
-            }
-        };
-
-        utterance.onerror = (event) => {
-            console.error('SpeechSynthesisUtterance.onerror', event);
-            toast({
-                variant: "destructive",
-                title: "Speech Error",
-                description: `Could not read headlines. Error: ${event.error}`,
-            });
-            setIsSpeakingHeadlines(false);
-            setIsPausedHeadlines(false);
-        };
-        return utterance;
-    });
-
-    headlineUtterancesRef.current = utterances;
-    setIsSpeakingHeadlines(true);
-    setIsPausedHeadlines(false);
-    window.speechSynthesis.cancel();
-    utterances.forEach(u => window.speechSynthesis.speak(u));
-  }, [visibleNews, filters.language, toast, voices, isSpeakingHeadlines, isPausedHeadlines]);
-  
-  const stopReadingHeadlines = () => {
-    if (window.speechSynthesis.speaking) {
-        window.speechSynthesis.cancel();
-        setIsSpeakingHeadlines(false);
-        setIsPausedHeadlines(false);
-        headlineUtterancesRef.current = [];
-    }
-  };
-  
     const playPodcastScript = useCallback(() => {
     if (!generatedPodcastScript) return;
 
@@ -533,7 +414,7 @@ const NewsApp = () => {
     setIsSpeakingPodcast(true);
     setIsPausedPodcast(false);
     utterances.forEach(u => window.speechSynthesis.speak(u));
-  }, [generatedPodcastScript, filters.language, toast, isSpeakingPodcast, isPausedPodcast, voices]);
+  }, [generatedPodcastScript, filters.language, toast, isSpeakingPodcast, isPausedPodcast]);
 
   const stopPodcastScript = useCallback(() => {
     window.speechSynthesis.cancel();
@@ -552,7 +433,6 @@ const NewsApp = () => {
       return;
     }
     
-    stopReadingHeadlines();
     audioPlayer.stop();
     setIsGeneratingPlaylist(true);
     
@@ -615,16 +495,7 @@ const NewsApp = () => {
               </p>
             </div>
              <div className="flex items-center justify-center sm:justify-end flex-wrap gap-2 w-full sm:w-auto">
-                <Button variant="outline" onClick={readAllHeadlines} disabled={visibleNews.length === 0 || audioPlayer.isPlaying || isGeneratingPlaylist}>
-                    {isSpeakingHeadlines && !isPausedHeadlines ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-                    {isSpeakingHeadlines && !isPausedHeadlines ? 'Pause' : isPausedHeadlines ? 'Resume' : 'Read Headlines'}
-                </Button>
-                {(isSpeakingHeadlines || isPausedHeadlines) && (
-                  <Button variant="outline" size="icon" onClick={stopReadingHeadlines}>
-                    <StopCircle className="h-5 w-5" />
-                  </Button>
-                )}
-                <Button variant="outline" onClick={handleListenToPlaylist} disabled={visibleNews.length === 0 || audioPlayer.isPlaying || isSpeakingHeadlines}>
+                <Button variant="outline" onClick={handleListenToPlaylist} disabled={visibleNews.length === 0 || audioPlayer.isPlaying}>
                     {isGeneratingPlaylist ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Volume2 className="mr-2 h-4 w-4" />}
                     {isGeneratingPlaylist ? 'Generating...' : 'Listen'}
                 </Button>
@@ -766,9 +637,6 @@ const NewsApp = () => {
                   const importantPoints = filters.language === 'hi' && article.importantPointsHi.length > 0 ? article.importantPointsHi : article.importantPoints;
                   const isLoading = isCurrentlyLoadingAudio || (filters.language === 'hi' && isCurrentlyProcessingText);
 
-                  const hasAudio = filters.language === 'en' ? !!article.audioDataUriEn : !!article.audioDataUriHi;
-                  const needsProcessing = (filters.language === 'hi' && !article.titleHi);
-
                   return (
                     <article
                       key={article.id}
@@ -810,7 +678,11 @@ const NewsApp = () => {
                         </div>
                         
                         {isLoading ? (
-                            <p className="text-slate-600 dark:text-slate-300 leading-relaxed flex-1">Processing...</p>
+                            <div className="flex-1 space-y-2">
+                                <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-5/6 animate-pulse"></div>
+                                <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-full animate-pulse"></div>
+                                <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-3/4 animate-pulse"></div>
+                            </div>
                         ) : importantPoints.length > 0 ? (
                           <ul className="space-y-2 text-slate-600 dark:text-slate-300 leading-relaxed flex-1 list-disc pl-5">
                             {importantPoints.map((point, index) => (
@@ -824,10 +696,15 @@ const NewsApp = () => {
                       </div>
                       <div className="bg-slate-50 dark:bg-slate-800 p-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700/50">
                         <div className="flex items-center gap-2">
-                          <button onClick={() => audioPlayer.playArticle(article, filters.language)} disabled={isLoading || isSpeakingHeadlines || isGeneratingPlaylist} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Listen to Article">
+                           <button 
+                                onClick={() => audioPlayer.playArticle(article, filters.language, processArticleForDisplay)} 
+                                disabled={isLoading || isGeneratingPlaylist} 
+                                className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
+                                aria-label="Listen to Article"
+                            >
                               {isCurrentlyPlaying ? <Pause className="w-5 h-5"/> : isCurrentlyLoadingAudio ? <Loader2 className="w-5 h-5 animate-spin"/> : <Headphones className="w-5 h-5"/>}
                           </button>
-                          {needsProcessing && !hasAudio && (
+                          {(filters.language === 'hi' && !article.titleHi) && (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Info className="w-4 h-4 text-blue-500 cursor-help" />
@@ -836,7 +713,7 @@ const NewsApp = () => {
                                 <p>Click Listen for an AI-powered summary!</p>
                               </TooltipContent>
                             </Tooltip>
-                            )}
+                          )}
 
                           <a href={article.contentUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 flex items-center gap-1.5">
                               Read More <ExternalLink className="w-4 h-4" />
@@ -967,3 +844,5 @@ const NewsApp = () => {
 export default function Home() {
   return <NewsApp />;
 }
+
+    
