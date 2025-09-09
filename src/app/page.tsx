@@ -26,6 +26,7 @@ import {
   Pause,
   Edit,
   Check,
+  Volume2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -48,6 +49,7 @@ import { useAudioPlayer } from '@/context/audio-player-context';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { summarizeArticlesForPodcast } from '@/ai/flows/summarize-articles-for-podcast';
 import { Textarea } from '@/components/ui/textarea';
+import { generatePlaylistAudio } from '@/ai/flows/generate-playlist-audio';
 
 
 const INDIAN_STATES: Record<string, string[]> = {
@@ -112,6 +114,9 @@ const NewsApp = () => {
   const [processingArticleIds, setProcessingArticleIds] = useState<Set<string>>(new Set());
   
   const [visibleArticlesCount, setVisibleArticlesCount] = useState(INITIAL_ARTICLES_COUNT);
+  
+  const [isGeneratingPlaylist, setIsGeneratingPlaylist] = useState(false);
+
 
   const handleArticleUpdate = useCallback((updatedArticle: Article) => {
     setNews(prevNews => prevNews.map(a => a.id === updatedArticle.id ? updatedArticle : a));
@@ -536,6 +541,58 @@ const NewsApp = () => {
     setIsPausedPodcast(false);
     podcastUtteranceRef.current = [];
   }, []);
+  
+  const handleListenToPlaylist = async () => {
+    if (visibleNews.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Articles Available",
+        description: "There are no news articles to generate a playlist from.",
+      });
+      return;
+    }
+    
+    stopReadingHeadlines();
+    audioPlayer.stop();
+    setIsGeneratingPlaylist(true);
+    
+    try {
+        toast({ title: 'Generating your audio playlist...', description: 'This may take a moment. Please wait...' });
+        
+        const articlesForPlaylist = visibleNews.map(a => {
+            const title = filters.language === 'hi' && a.titleHi ? a.titleHi : a.title;
+            const content = filters.language === 'hi' 
+              ? (a.summaryHi || a.summary) 
+              : (a.importantPoints.length > 0 ? a.importantPoints.join('. ') : a.summary);
+            return { title, content };
+        });
+
+        const result = await generatePlaylistAudio({
+            articles: articlesForPlaylist,
+            language: filters.language
+        });
+
+        audioPlayer.playPlaylist(
+          result.audioDataUri,
+          `Today's Playlist (${filters.language === 'hi' ? 'Hindi' : 'English'})`,
+          `${visibleNews.length} articles`
+        );
+
+        toast({ title: 'Audio playlist is ready!', description: 'Playback will begin shortly.' });
+
+    } catch (e) {
+      console.error("Error generating playlist audio", e);
+      const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
+      toast({
+        variant: "destructive",
+        title: "Playlist Generation Failed",
+        description: errorMessage,
+      });
+    } finally {
+      setIsGeneratingPlaylist(false);
+    }
+  };
+
 
   useEffect(() => {
     // Cleanup speech synthesis on component unmount
@@ -557,8 +614,8 @@ const NewsApp = () => {
                 Your AI-powered daily briefing for current affairs.
               </p>
             </div>
-             <div className="flex items-center justify-end flex-wrap gap-2 w-full sm:w-auto">
-                <Button variant="outline" onClick={readAllHeadlines} disabled={visibleNews.length === 0 || audioPlayer.isPlaying}>
+             <div className="flex items-center justify-center sm:justify-end flex-wrap gap-2 w-full sm:w-auto">
+                <Button variant="outline" onClick={readAllHeadlines} disabled={visibleNews.length === 0 || audioPlayer.isPlaying || isGeneratingPlaylist}>
                     {isSpeakingHeadlines && !isPausedHeadlines ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
                     {isSpeakingHeadlines && !isPausedHeadlines ? 'Pause' : isPausedHeadlines ? 'Resume' : 'Read Headlines'}
                 </Button>
@@ -567,6 +624,10 @@ const NewsApp = () => {
                     <StopCircle className="h-5 w-5" />
                   </Button>
                 )}
+                <Button variant="outline" onClick={handleListenToPlaylist} disabled={visibleNews.length === 0 || audioPlayer.isPlaying || isSpeakingHeadlines}>
+                    {isGeneratingPlaylist ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Volume2 className="mr-2 h-4 w-4" />}
+                    {isGeneratingPlaylist ? 'Generating...' : 'Listen'}
+                </Button>
               <Button variant="outline" onClick={handleCreatePodcast} disabled={news.length === 0}>
                 <Podcast className="mr-2 h-4 w-4" />
                 Generate Discussion
@@ -763,7 +824,7 @@ const NewsApp = () => {
                       </div>
                       <div className="bg-slate-50 dark:bg-slate-800 p-4 flex items-center justify-between border-t border-slate-200 dark:border-slate-700/50">
                         <div className="flex items-center gap-2">
-                          <button onClick={() => audioPlayer.playArticle(article, filters.language)} disabled={isLoading || isSpeakingHeadlines} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Listen to Article">
+                          <button onClick={() => audioPlayer.playArticle(article, filters.language)} disabled={isLoading || isSpeakingHeadlines || isGeneratingPlaylist} className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed" aria-label="Listen to Article">
                               {isCurrentlyPlaying ? <Pause className="w-5 h-5"/> : isCurrentlyLoadingAudio ? <Loader2 className="w-5 h-5 animate-spin"/> : <Headphones className="w-5 h-5"/>}
                           </button>
                           {needsProcessing && !hasAudio && (

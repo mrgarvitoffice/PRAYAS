@@ -3,62 +3,86 @@
 
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react';
 import type { Article, Language } from '@/lib/types';
-import { summarizeArticle } from '@/ai/flows/summarize-article';
 import { translateAndSummarizeArticleHindi } from '@/ai/flows/translate-and-summarize-article-hindi';
 import { useToast } from '@/hooks/use-toast';
 
 interface AudioPlayerContextType {
-  currentArticleId: string | null;
-  isPlaying: boolean;
+  // Shared
+  stop: () => void;
   isLoading: boolean;
-  progress: number;
+  isPlaying: boolean; // General playing state for the whole player
+  mode: 'article' | 'playlist' | 'idle';
+
+  // Article Mode
+  currentArticleId: string | null;
+  article: Article | null;
   playArticle: (article: Article, language: Language) => void;
   togglePlayPause: () => void;
-  stop: () => void;
-  seek: (progress: number) => void;
   onArticleUpdate?: (article: Article) => void;
-  article: Article | null;
+  
+  // Playlist Mode
+  playlistAudioUri: string | null;
+  playlistTitle: string;
+  playlistSubtitle: string;
+  isPlaylistPlaying: boolean;
+  playlistProgress: number; // 0-100
+  playPlaylist: (audioUri: string, title: string, subtitle: string) => void;
+  togglePlaylistPlayPause: (forceState?: boolean) => void;
+  seekPlaylist: (progress: number) => void;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextType | undefined>(undefined);
 
 export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [article, setArticle] = useState<Article | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [mode, setMode] = useState<'article' | 'playlist' | 'idle'>('idle');
   const [isLoading, setIsLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
   const { toast } = useToast();
   
+  // Article-specific state
+  const [article, setArticle] = useState<Article | null>(null);
+  const [isArticlePlaying, setIsArticlePlaying] = useState(false);
   const onArticleUpdateRef = useRef<(article: Article) => void>();
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-
+  
+  // Playlist-specific state
+  const [playlistAudioUri, setPlaylistAudioUri] = useState<string | null>(null);
+  const [playlistTitle, setPlaylistTitle] = useState('');
+  const [playlistSubtitle, setPlaylistSubtitle] = useState('');
+  const [isPlaylistPlaying, setIsPlaylistPlaying] = useState(false);
+  const [playlistProgress, setPlaylistProgress] = useState(0);
 
   const stop = useCallback(() => {
+    // Stop browser speech
     if (utteranceRef.current) {
       window.speechSynthesis.cancel();
       utteranceRef.current = null;
     }
-    setIsPlaying(false);
-    setProgress(0);
-    setArticle(null);
+    // Stop playlist audio
+    setPlaylistAudioUri(null);
+    
+    // Reset all states
+    setMode('idle');
     setIsLoading(false);
+    setArticle(null);
+    setIsArticlePlaying(false);
+    setPlaylistTitle('');
+    setPlaylistSubtitle('');
+    setIsPlaylistPlaying(false);
+    setPlaylistProgress(0);
   }, []);
 
   const togglePlayPause = useCallback(() => {
-    if (utteranceRef.current) {
-      if (isPlaying) {
+    if (mode === 'article' && utteranceRef.current) {
+      if (isArticlePlaying) {
         window.speechSynthesis.pause();
       } else {
         window.speechSynthesis.resume();
       }
-      setIsPlaying(!isPlaying);
+      setIsArticlePlaying(!isArticlePlaying);
     }
-  }, [isPlaying]);
+  }, [mode, isArticlePlaying]);
 
   const processAndCacheArticle = useCallback(async (articleToProcess: Article, language: Language): Promise<Article | null> => {
-    let updatedArticle = { ...articleToProcess };
-    
-    // Only process Hindi on demand. English points are pre-fetched.
     const needsProcessing = language === 'hi' && (!articleToProcess.titleHi || articleToProcess.importantPointsHi.length === 0);
 
     if (needsProcessing) {
@@ -69,9 +93,12 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       
       try {
         const hindiSummary = await translateAndSummarizeArticleHindi({ articleTitle: articleToProcess.title, articleContent: articleToProcess.rawContent });
-        updatedArticle.titleHi = hindiSummary.translatedTitle;
-        updatedArticle.summaryHi = hindiSummary.summaryPoints.join(' ');
-        updatedArticle.importantPointsHi = hindiSummary.summaryPoints;
+        const updatedArticle = {
+          ...articleToProcess,
+          titleHi: hindiSummary.translatedTitle,
+          summaryHi: hindiSummary.summaryPoints.join(' '),
+          importantPointsHi: hindiSummary.summaryPoints,
+        };
         
         if (onArticleUpdateRef.current) {
            onArticleUpdateRef.current(updatedArticle);
@@ -85,18 +112,19 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     }
     
-    return updatedArticle; // Return article if no processing was needed
+    return articleToProcess;
   }, [toast]);
   
   const playArticle = useCallback(async (articleToPlay: Article, language: Language) => {
     if (isLoading) return;
     
-    if (article?.id === articleToPlay.id) {
+    if (mode === 'article' && article?.id === articleToPlay.id) {
         togglePlayPause();
         return;
     }
     
     stop();
+    setMode('article');
     setIsLoading(true);
     setArticle(articleToPlay);
 
@@ -133,9 +161,9 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             utterance.voice = bestVoice;
         }
 
-        utterance.onstart = () => setIsPlaying(true);
-        utterance.onpause = () => setIsPlaying(false);
-        utterance.onresume = () => setIsPlaying(true);
+        utterance.onstart = () => setIsArticlePlaying(true);
+        utterance.onpause = () => setIsArticlePlaying(false);
+        utterance.onresume = () => setIsArticlePlaying(true);
         utterance.onend = stop;
         utterance.onerror = (e) => {
             console.error("Speech synthesis error", e);
@@ -143,14 +171,7 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
             stop();
         };
         
-        // This is required on some browsers to ensure voices are loaded
-        if (voices.length === 0) {
-            window.speechSynthesis.onvoiceschanged = () => {
-                window.speechSynthesis.speak(utterance);
-            };
-        } else {
-             window.speechSynthesis.speak(utterance);
-        }
+        window.speechSynthesis.speak(utterance);
 
     } catch (error) {
       console.error('Playback failed:', error);
@@ -159,30 +180,51 @@ export const AudioPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, article, processAndCacheArticle, stop, togglePlayPause, toast]);
+  }, [isLoading, article, mode, processAndCacheArticle, stop, togglePlayPause, toast]);
 
 
-  // Placeholder for seek as Web Speech API doesn't support it well.
-  const seek = useCallback((newProgress: number) => {
-    console.warn("Seek is not supported for browser-based text-to-speech.");
+  const playPlaylist = useCallback((audioUri: string, title: string, subtitle: string) => {
+    stop();
+    setMode('playlist');
+    setPlaylistAudioUri(audioUri);
+    setPlaylistTitle(title);
+    setPlaylistSubtitle(subtitle);
+    setIsPlaylistPlaying(true);
+  }, [stop]);
+
+  const togglePlaylistPlayPause = useCallback((forceState?: boolean) => {
+      setIsPlaylistPlaying(current => forceState !== undefined ? forceState : !current);
+  }, []);
+  
+  const seekPlaylist = useCallback((newProgress: number) => {
+      setPlaylistProgress(newProgress);
+      // Logic to seek the actual audio element will be in the component
   }, []);
 
   const value: AudioPlayerContextType = {
+    // Shared
+    stop,
+    isLoading,
+    isPlaying: isArticlePlaying || isPlaylistPlaying,
+    mode,
+    // Article
     currentArticleId: article?.id || null,
     article,
-    isPlaying,
-    isLoading,
-    progress: 0, // Progress is not tracked for browser TTS
     playArticle,
     togglePlayPause,
-    stop,
-    seek,
+    onArticleUpdate: onArticleUpdateRef.current,
     set onArticleUpdate(callback: ((article: Article) => void) | undefined) {
       onArticleUpdateRef.current = callback;
     },
-    get onArticleUpdate() {
-      return onArticleUpdateRef.current;
-    }
+    // Playlist
+    playlistAudioUri,
+    playlistTitle,
+    playlistSubtitle,
+    isPlaylistPlaying,
+    playlistProgress,
+    playPlaylist,
+    togglePlaylistPlayPause,
+    seekPlaylist
   };
 
   return <AudioPlayerContext.Provider value={value}>{children}</AudioPlayerContext.Provider>;
