@@ -71,9 +71,7 @@ const generatePlaylistAudioFlow = ai.defineFlow({
     .map(article => `${article.title}. ${article.content}`)
     .join(`\n\n${separator}\n\n`);
 
-  const voice = language === 'hi' ? 'hi-IN-Standard-A' : 'en-IN-Standard-B';
-  const langCode = language === 'hi' ? 'hi-IN' : 'en-IN';
-
+  const voice = language === 'hi' ? 'Aditi' : 'Algenib';
 
   console.log(`[AI Flow - Playlist TTS] Generating audio with voice: ${voice}`);
 
@@ -83,11 +81,7 @@ const generatePlaylistAudioFlow = ai.defineFlow({
         responseModalities: ['AUDIO'],
         speechConfig: {
           voiceConfig: {
-            // Note: Cloud TTS voices are used here for quality, not prebuilt ones
-            customVoiceConfig: {
-                name: voice,
-                languageCode: langCode,
-            }
+            prebuiltVoiceConfig: { voiceName: voice },
           },
         },
       },
