@@ -18,7 +18,7 @@ const GenerateDiscussionAudioInputSchema = z.object({
       title: z.string(),
       content: z.string(),
   })).describe('An array of article objects to include in the discussion.'),
-  language: z.enum(['en', 'hi']).describe('The language for the discussion script.'),
+  language: z.string().describe('The language for the discussion script.'),
 });
 export type GenerateDiscussionAudioInput = z.infer<typeof GenerateDiscussionAudioInputSchema>;
 

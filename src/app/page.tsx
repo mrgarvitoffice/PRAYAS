@@ -52,7 +52,7 @@ import { summarizeArticlesForPodcast } from '@/ai/flows/summarize-articles-for-p
 import { Textarea } from '@/components/ui/textarea';
 import { generatePlaylistAudio } from '@/ai/flows/generate-playlist-audio';
 import { SignInButton, UserButton, useAuth, useUser } from '@clerk/nextjs';
-import { sortArticlesByPreference, getUserProfileSummary } from '@/lib/ml/recommendation';
+import { sortArticlesByPreference, getUserProfileSummary, saveRatingWithMeta, loadRatingsMeta, RatedArticleMeta } from '@/lib/ml/recommendation';
 import { chatWithNews } from '@/ai/flows/chat-with-news';
 import { generateChatAudio } from '@/ai/flows/generate-chat-audio';
 import { MessageSquare, UserCircle, Mic, MicOff, RefreshCw } from 'lucide-react';
@@ -132,14 +132,16 @@ const NewsApp = () => {
   const [chatHistory, setChatHistory] = useState<{role: 'user' | 'ai', text: string}[]>([]);
   const [isChatting, setIsChatting] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [ratingsMeta, setRatingsMeta] = useState<Record<string, RatedArticleMeta>>({});
 
-  // Persist Ratings
+  // Load persisted ratings + metadata on login
   useEffect(() => {
     if (user?.id) {
       const stored = localStorage.getItem(`news_ratings_${user.id}`);
       if (stored) {
         try { setRatings(JSON.parse(stored)); } catch (e) { console.error(e); }
       }
+      setRatingsMeta(loadRatingsMeta(user.id));
     }
   }, [user?.id]);
 
@@ -267,7 +269,7 @@ const NewsApp = () => {
   // Only re-sort the news feed when the actual news array changes (e.g. new fetch).
   // This prevents the UI from jumping around while the user is actively reading and rating.
   useEffect(() => {
-    setRecommendedNews(sortArticlesByPreference(news, ratings));
+    setRecommendedNews(sortArticlesByPreference(news, ratings, ratingsMeta));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [news]);
 
@@ -931,7 +933,11 @@ const NewsApp = () => {
                                 }
                                 setRatings(prev => {
                                   const next = { ...prev, [article.id]: star };
-                                  if (user?.id) localStorage.setItem(`news_ratings_${user.id}`, JSON.stringify(next));
+                                  if (user?.id) {
+                                    // Save rating + article metadata for persistent ML memory
+                                    saveRatingWithMeta(user.id, article.id, star, article);
+                                    setRatingsMeta(loadRatingsMeta(user.id));
+                                  }
                                   return next;
                                 });
                               }}
@@ -1081,7 +1087,7 @@ const NewsApp = () => {
                           <div>
                               <h4 className="font-medium text-slate-900 dark:text-white mb-2 flex items-center gap-2"><Check className="w-4 h-4 text-green-500"/> What you like</h4>
                               <div className="flex flex-wrap gap-2">
-                                  {getUserProfileSummary(news, ratings).likedTopics.map(topic => (
+                                  {getUserProfileSummary(news, ratings, ratingsMeta).likedTopics.map(topic => (
                                       <span key={topic} className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-sm font-medium border border-green-200 dark:border-green-800">
                                           {topic}
                                       </span>
@@ -1091,7 +1097,7 @@ const NewsApp = () => {
                           <div>
                               <h4 className="font-medium text-slate-900 dark:text-white mb-2 flex items-center gap-2"><X className="w-4 h-4 text-red-500"/> What you don't like</h4>
                               <div className="flex flex-wrap gap-2">
-                                  {getUserProfileSummary(news, ratings).dislikedTopics.map(topic => (
+                                  {getUserProfileSummary(news, ratings, ratingsMeta).dislikedTopics.map(topic => (
                                       <span key={topic} className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-full text-sm font-medium border border-red-200 dark:border-red-800">
                                           {topic}
                                       </span>
