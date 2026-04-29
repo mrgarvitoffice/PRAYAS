@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 
-// We replaced the heavy onnxruntime-node (350MB+) with a lightweight AI call 
-// to fix the Vercel "Max serverless function size exceeded" error.
-
+// Replaced local @huggingface/transformers (354 MB onnxruntime-node) with Groq API.
+// This reduces the serverless function size from ~400MB to <5MB, fixing Vercel deployment.
 export async function POST(req: Request) {
     try {
         const { text } = await req.json();
@@ -13,10 +12,11 @@ export async function POST(req: Request) {
 
         const groqApiKey = process.env.GROQ_API_KEY;
         if (!groqApiKey) {
-            throw new Error("GROQ_API_KEY_MISSING");
+            return NextResponse.json({ error: 'GROQ_API_KEY is not configured.' }, { status: 500 });
         }
 
-        // Use Groq for lightning fast sentiment analysis
+        const truncatedText = text.substring(0, 1200);
+
         const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
             headers: {
@@ -24,32 +24,40 @@ export async function POST(req: Request) {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "llama-3.1-8b-instant",
+                model: "llama-3.3-70b-versatile",
                 messages: [
-                    { 
-                        role: "system", 
-                        content: "Analyze the following news text. Return ONLY a JSON array with one object like this: [{\"label\": \"POSITIVE\", \"score\": 0.95}]. Use labels POSITIVE or NEGATIVE." 
+                    {
+                        role: "system",
+                        content: `You are a sentiment analysis API. Analyze the sentiment of the given news text.
+Respond ONLY with a valid JSON object in this exact format (no other text):
+{"label": "POSITIVE" | "NEGATIVE" | "NEUTRAL", "score": <float between 0 and 1>}
+Where score represents the confidence level.`
                     },
-                    { role: "user", content: text.substring(0, 1000) }
+                    {
+                        role: "user",
+                        content: truncatedText
+                    }
                 ],
                 temperature: 0.1,
+                max_tokens: 60,
             })
         });
 
         if (!response.ok) {
-            throw new Error("Groq API failed");
+            throw new Error(`Groq API error: ${response.statusText}`);
         }
 
         const data = await response.json();
-        const content = data.choices[0].message.content;
+        const rawContent = data.choices[0].message.content.trim();
         
-        // Extract JSON from the response
-        const jsonMatch = content.match(/\[.*\]/s);
-        const result = jsonMatch ? JSON.parse(jsonMatch[0]) : [{ label: 'NEUTRAL', score: 0.5 }];
+        // Parse the JSON response from Groq
+        const parsed = JSON.parse(rawContent);
         
-        return NextResponse.json(result);
+        // Return in the same format as the old HuggingFace pipeline for UI compatibility
+        return NextResponse.json([{ label: parsed.label, score: parsed.score }]);
+
     } catch (error: any) {
-        console.error("Detection error:", error);
-        return NextResponse.json([{ label: 'NEUTRAL', score: 0.5 }]);
+        console.error("ML processing error:", error);
+        return NextResponse.json({ error: error.message || 'Failed to process ML detection' }, { status: 500 });
     }
 }
