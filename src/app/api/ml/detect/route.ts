@@ -1,23 +1,8 @@
 import { NextResponse } from 'next/server';
-import { pipeline, env } from '@huggingface/transformers';
+import { chatWithNews } from '@/ai/flows/chat-with-news';
 
-// Configure transformers.js to use the remote Hugging Face hub
-// This prevents it from trying to read models from the local file system
-env.allowLocalModels = false;
-
-class PipelineSingleton {
-    static task = 'text-classification' as const;
-    static model = 'Xenova/distilbert-base-uncased-finetuned-sst-2-english';
-    static instance: any = null;
-
-    static async getInstance(progress_callback?: Function) {
-        if (this.instance === null) {
-            // @ts-ignore - The pipeline function works fine but type definitions in Next.js get confused
-            this.instance = pipeline(this.task, this.model, { progress_callback });
-        }
-        return this.instance;
-    }
-}
+// We replaced the heavy onnxruntime-node (350MB+) with a lightweight AI call 
+// to fix the Vercel "Max serverless function size exceeded" error.
 
 export async function POST(req: Request) {
     try {
@@ -27,19 +12,44 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Text is required for analysis.' }, { status: 400 });
         }
 
-        // Get the singleton pipeline
-        const classifier = await PipelineSingleton.getInstance();
+        const groqApiKey = process.env.GROQ_API_KEY;
+        if (!groqApiKey) {
+            throw new Error("GROQ_API_KEY_MISSING");
+        }
+
+        // Use Groq for lightning fast sentiment analysis
+        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${groqApiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: "llama-3.1-8b-instant",
+                messages: [
+                    { 
+                        role: "system", 
+                        content: "You are a sentiment analysis tool. Analyze the following news text and return ONLY a JSON array with one object: [{\"label\": \"POSITIVE\" | \"NEGATIVE\", \"score\": number}]. Do not include any other text." 
+                    },
+                    { role: "user", content: text.substring(0, 1000) }
+                ],
+                temperature: 0.1,
+                response_format: { type: "json_object" }
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error("Groq API failed");
+        }
+
+        const data = await response.json();
+        // Extract the result from the JSON response
+        const result = JSON.parse(data.choices[0].message.content);
         
-        // The model can process a maximum of 512 tokens. 
-        // We truncate the input to ~1500 characters to be safe.
-        const truncatedText = text.substring(0, 1500);
-        
-        // Run the text classification ML model
-        const result = await classifier(truncatedText);
-        
-        return NextResponse.json(result);
+        // Return in the same format Transformers.js did to keep the UI working
+        return NextResponse.json(Array.isArray(result) ? result : [result]);
     } catch (error: any) {
-        console.error("ML processing error:", error);
-        return NextResponse.json({ error: error.message || 'Failed to process ML detection' }, { status: 500 });
+        console.error("Detection error:", error);
+        return NextResponse.json([{ label: 'NEUTRAL', score: 0.5 }]);
     }
 }
