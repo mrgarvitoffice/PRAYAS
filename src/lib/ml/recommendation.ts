@@ -1,4 +1,5 @@
 import { Article } from '../types';
+import { getBaselineCategoryWeights } from './training-data';
 
 const STOP_WORDS = new Set([
   'the', 'and', 'with', 'for', 'that', 'this', 'from', 'they', 'have', 'news', 'update', 
@@ -77,6 +78,13 @@ export function sortArticlesByPreference(
 
   const userProfile = new Map<string, number>();
   const categoryScores = new Map<string, number>();
+
+  // 0. COLD-START BASELINE: seed with training dataset category weights
+  // This gives new users a smart UPSC-relevant default feed from day 1
+  const baselineWeights = getBaselineCategoryWeights();
+  Object.entries(baselineWeights).forEach(([cat, weight]) => {
+    categoryScores.set(cat, weight * 0.5); // Dampened so user ratings override quickly
+  });
 
   // 1a. Build profile from current feed articles (in-session ratings)
   if (ratedArticleIds.length > 0) {

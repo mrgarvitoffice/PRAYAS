@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getCredibilityFewShotExamples } from '@/lib/ml/training-data';
 
 // AI Detect: Analyzes news article credibility and factual accuracy using Groq.
 // Returns a credibility score (0-1) and a verdict (CREDIBLE / MISLEADING / UNVERIFIED).
@@ -28,7 +29,7 @@ export async function POST(req: Request) {
                 messages: [
                     {
                         role: "system",
-                        content: `You are a professional news credibility and fact-checking AI system.
+                        content: `You are a professional news credibility and fact-checking AI system trained on Indian news.
 Analyze the given news article and assess its credibility.
 
 Respond ONLY with a valid JSON object in this EXACT format (no other text):
@@ -39,7 +40,10 @@ Use EXACTLY these scores:
 - "UNVERIFIED": score must be exactly 0.75 — lacks clear sourcing, cannot be fully confirmed
 - "MISLEADING": score must be exactly 0.61 — sensationalist, logically inconsistent, or appears false
 
-Choose the label that best fits. Do not use any other score values.`
+Training examples (few-shot):
+${getCredibilityFewShotExamples()}
+
+Now classify the user's article using the same pattern.`
                     },
                     {
                         role: "user",
