@@ -111,7 +111,16 @@ const fetchAndProcessNewsFlow = ai.defineFlow(
     const articles = newsResponse.results || [];
     
     // Filter out articles that have no title or content to process
-    const validArticles = articles.filter(article => article.title && (article.content || article.description));
+    let validArticles = articles.filter(article => article.title && (article.content || article.description));
+    
+    // Attempt to filter out small channels and prioritize major platforms
+    const MAJOR_SOURCES = ['timesofindia', 'ndtv', 'thehindu', 'indianexpress', 'hindustantimes', 'bbc', 'cnn', 'reuters', 'apnews', 'moneycontrol', 'livemint', 'aljazeera', 'bloomberg', 'cnbc', 'wsj', 'nytimes', 'washingtonpost', 'news18', 'indiatoday'];
+    const majorArticles = validArticles.filter(article => MAJOR_SOURCES.some(source => article.source_id?.toLowerCase().includes(source) || article.link?.toLowerCase().includes(source)));
+    
+    // If we have enough high-quality articles from major networks, filter out the obscure blogs completely!
+    if (majorArticles.length >= 5) {
+        validArticles = majorArticles;
+    }
 
     // Transform valid articles
     const transformedArticles = await Promise.all(validArticles.map(async (article) => {
@@ -123,8 +132,23 @@ const fetchAndProcessNewsFlow = ai.defineFlow(
             return transformArticle(article, summaryResult.important_points);
         } catch (e) {
             console.error(`Could not summarize article ${article.article_id}`, e);
-            // If summarization fails, transform without bullet points
-            return transformArticle(article);
+            // Fallback: extract sentences from description to provide 3 points
+            const rawText = article.description || article.content || '';
+            const sentences = rawText.split(/(?<=[.?!])\s+/).filter(s => s.trim().length > 15);
+            
+            let fallbackPoints: string[] = [];
+            if (sentences.length >= 3) {
+              fallbackPoints = sentences.slice(0, 3);
+            } else if (sentences.length > 0) {
+              fallbackPoints = [...sentences, "Click Read More for full details."];
+            } else {
+              fallbackPoints = [
+                "Key developments reported in recent events.", 
+                "Information regarding this news is currently limited.", 
+                "Please read the full article for more details."
+              ];
+            }
+            return transformArticle(article, fallbackPoints.slice(0, 3));
         }
     }));
     

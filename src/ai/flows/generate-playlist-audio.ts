@@ -19,7 +19,7 @@ const GeneratePlaylistAudioInputSchema = z.object({
       title: z.string(),
       content: z.string(),
   })).describe('An array of article objects to include in the audio playlist.'),
-  language: z.enum(['en', 'hi']).describe('The language for the audio narration.'),
+  language: z.string().describe('The language for the audio narration.'),
 });
 export type GeneratePlaylistAudioInput = z.infer<typeof GeneratePlaylistAudioInputSchema>;
 
@@ -66,12 +66,20 @@ const generatePlaylistAudioFlow = ai.defineFlow({
     throw new Error('Cannot generate audio from an empty list of articles.');
   }
 
-  const separator = language === 'hi' ? 'अगला समाचार।' : 'Next story.';
+  const separatorMap: Record<string, string> = {
+      'en': 'Next story.',
+      'hi': 'अगला समाचार।',
+      'ja': '次のニュース。',
+      'de': 'Nächste Geschichte.',
+      'fr': 'Histoire suivante.',
+      'ta': 'அடுத்த செய்தி.'
+  };
+  const separator = separatorMap[language] || 'Next story.';
   const fullScript = articles
     .map(article => `${article.title}. ${article.content}`)
     .join(`\n\n${separator}\n\n`);
 
-  const voice = language === 'hi' ? 'Aditi' : 'Algenib';
+  const voice = language === 'hi' ? 'Aditi' : 'Puck';
 
   console.log(`[AI Flow - Playlist TTS] Generating audio with voice: ${voice}`);
 

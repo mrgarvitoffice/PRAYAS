@@ -29,7 +29,7 @@ export type LocationData = {
   };
 };
 
-export type Language = 'en' | 'hi';
+export type Language = 'en' | 'hi' | 'ja' | 'de' | 'fr' | 'ta';
 
 export type NewsDataArticle = {
   article_id: string;

@@ -62,7 +62,37 @@ const translateAndSummarizeArticleHindiFlow = ai.defineFlow(
     outputSchema: TranslateAndSummarizeArticleHindiOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
-    return output!;
+    try {
+      const {output} = await prompt(input);
+      if (!output) throw new Error("No output from Gemini");
+      return output;
+    } catch (error) {
+      console.error("Gemini translation failed, falling back to free translation API:", error);
+      
+      // Fallback Google Translate logic
+      const fallbackTranslate = async (text: string) => {
+        if (!text) return '';
+        try {
+            const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=hi&dt=t&q=${encodeURIComponent(text.substring(0, 800))}`;
+            const res = await fetch(url);
+            const json = await res.json();
+            return json[0].map((item: any) => item[0]).join('');
+        } catch(e) {
+            return text;
+        }
+      };
+
+      const translatedTitle = await fallbackTranslate(input.articleTitle);
+      const translatedContent = await fallbackTranslate(input.articleContent || '');
+      
+      // Attempt to split content into rudimentary points
+      let points = translatedContent.split(/(?<=[।|?|!])\s+/).filter(s => s.trim().length > 10);
+      if (points.length === 0) points = [translatedTitle, "विवरण के लिए कृपया पूरा लेख पढ़ें।"];
+
+      return {
+        translatedTitle: translatedTitle,
+        summaryPoints: points.slice(0, 3)
+      };
+    }
   }
 );

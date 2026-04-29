@@ -27,6 +27,7 @@ import {
   Edit,
   Check,
   Volume2,
+  Star,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -50,6 +51,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { summarizeArticlesForPodcast } from '@/ai/flows/summarize-articles-for-podcast';
 import { Textarea } from '@/components/ui/textarea';
 import { generatePlaylistAudio } from '@/ai/flows/generate-playlist-audio';
+import { SignInButton, UserButton, useAuth, useUser } from '@clerk/nextjs';
+import { sortArticlesByPreference, getUserProfileSummary } from '@/lib/ml/recommendation';
+import { chatWithNews } from '@/ai/flows/chat-with-news';
+import { generateChatAudio } from '@/ai/flows/generate-chat-audio';
+import { MessageSquare, UserCircle, Mic, MicOff, RefreshCw } from 'lucide-react';
 
 
 const INDIAN_STATES: Record<string, string[]> = {
@@ -77,6 +83,8 @@ const INDIAN_STATES: Record<string, string[]> = {
 const INITIAL_ARTICLES_COUNT = 6;
 
 const NewsApp = () => {
+  const { isSignedIn } = useAuth();
+  const { user } = useUser();
   const [news, setNews] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -111,6 +119,29 @@ const NewsApp = () => {
   const [visibleArticlesCount, setVisibleArticlesCount] = useState(INITIAL_ARTICLES_COUNT);
   
   const [isGeneratingPlaylist, setIsGeneratingPlaylist] = useState(false);
+  const [detectedArticles, setDetectedArticles] = useState<Set<string>>(new Set());
+  const [ratings, setRatings] = useState<Record<string, number>>({});
+  
+  // ML States
+  const [detectingArticles, setDetectingArticles] = useState<Set<string>>(new Set());
+  const [articleSentiments, setArticleSentiments] = useState<Record<string, { label: string, score: number }>>({});
+
+  // Profile & Chat States
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [chatHistory, setChatHistory] = useState<{role: 'user' | 'ai', text: string}[]>([]);
+  const [isChatting, setIsChatting] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+
+  // Persist Ratings
+  useEffect(() => {
+    if (user?.id) {
+      const stored = localStorage.getItem(`news_ratings_${user.id}`);
+      if (stored) {
+        try { setRatings(JSON.parse(stored)); } catch (e) { console.error(e); }
+      }
+    }
+  }, [user?.id]);
 
 
   const handleArticleUpdate = useCallback((updatedArticle: Article) => {
@@ -163,23 +194,38 @@ const NewsApp = () => {
     }
   }, []);
 
-  const processArticleForDisplay = useCallback(async (article: Article) => {
-    if (article.titleHi) return; // Already processed
+  const [translations, setTranslations] = useState<Record<string, Record<string, { title: string, summary: string, points: string[] }>>>({});
+
+  const processArticleForDisplay = useCallback(async (article: Article, targetLang: string) => {
+    if (targetLang === 'en') return;
+    if (translations[article.id]?.[targetLang]) return; // Already processed
 
     setProcessingArticleIds(prev => new Set(prev).add(article.id));
     try {
-      const hindiSummary = await translateAndSummarizeArticleHindi({
-        articleTitle: article.title,
-        articleContent: article.rawContent,
-      });
-      const processedArticle = {
-        ...article,
-        titleHi: hindiSummary.translatedTitle,
-        summaryHi: hindiSummary.summaryPoints.join(' '),
-        importantPointsHi: hindiSummary.summaryPoints,
+      const translateText = async (text: string) => {
+          if (!text) return text;
+          const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${targetLang}&dt=t&q=${encodeURIComponent(text.substring(0, 1000))}`;
+          const res = await fetch(url);
+          const json = await res.json();
+          return json[0].map((item: any) => item[0]).join('');
       };
-      handleArticleUpdate(processedArticle);
-      return processedArticle;
+
+      const translatedTitle = await translateText(article.title);
+      
+      // We translate the summary/content and extract generic points
+      const contentToTranslate = article.summary || article.rawContent || '';
+      const translatedSummary = await translateText(contentToTranslate);
+      
+      let points = translatedSummary.split(/(?<=[।|?|!|.])\s+/).filter(s => s.trim().length > 10);
+      if (points.length === 0) points = [translatedTitle];
+
+      setTranslations(prev => ({
+          ...prev,
+          [article.id]: {
+              ...(prev[article.id] || {}),
+              [targetLang]: { title: translatedTitle, summary: translatedSummary, points: points.slice(0, 3) }
+          }
+      }));
     } catch (e) {
       console.error(`Failed to process article ${article.id} for display`, e);
       toast({
@@ -187,7 +233,6 @@ const NewsApp = () => {
         title: "Translation Failed",
         description: `Could not translate "${article.title.slice(0, 30)}..."`,
       });
-       return null;
     } finally {
        setProcessingArticleIds(prev => {
         const newSet = new Set(prev);
@@ -195,7 +240,7 @@ const NewsApp = () => {
         return newSet;
        });
     }
-  }, [handleArticleUpdate, toast]);
+  }, [translations, toast]);
 
   const handleFilterChange = useCallback((filterType: string, value: string) => {
     setFilters(prev => {
@@ -217,15 +262,26 @@ const NewsApp = () => {
     return () => clearTimeout(handler);
   }, [filters.search, filters.region, filters.state, filters.city, filters.category, fetchNewsCallback]);
 
+  const [recommendedNews, setRecommendedNews] = useState<Article[]>([]);
+  
+  // Only re-sort the news feed when the actual news array changes (e.g. new fetch).
+  // This prevents the UI from jumping around while the user is actively reading and rating.
   useEffect(() => {
-    if (filters.language === 'hi') {
-      news.slice(0, visibleArticlesCount).forEach(article => {
-        if (!article.titleHi && !processingArticleIds.has(article.id)) {
-           processArticleForDisplay(article);
+    setRecommendedNews(sortArticlesByPreference(news, ratings));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [news]);
+
+  const visibleNews = useMemo(() => recommendedNews.slice(0, visibleArticlesCount), [recommendedNews, visibleArticlesCount]);
+
+  useEffect(() => {
+    if (filters.language !== 'en') {
+      visibleNews.forEach(article => {
+        if (!translations[article.id]?.[filters.language] && !processingArticleIds.has(article.id)) {
+           processArticleForDisplay(article, filters.language);
         }
       });
     }
-  }, [filters.language, news, processingArticleIds, processArticleForDisplay, visibleArticlesCount]);
+  }, [filters.language, visibleNews, processingArticleIds, processArticleForDisplay, translations]);
 
 
   const clearFilters = () => {
@@ -246,7 +302,110 @@ const NewsApp = () => {
     return INDIAN_STATES[filters.state] || [];
   }, [filters.state, filters.region]);
 
-  const visibleNews = useMemo(() => news.slice(0, visibleArticlesCount), [news, visibleArticlesCount]);
+
+  
+  const handleDetect = async (article: Article) => {
+    if (!isSignedIn) {
+      toast({ variant: "destructive", title: "Authentication Required", description: "Please sign in to run AI Verification." });
+      return;
+    }
+    
+    if (articleSentiments[article.id]) return;
+    
+    setDetectingArticles(prev => new Set(prev).add(article.id));
+    try {
+      const textToAnalyze = article.title + ' ' + (article.summary || '') + ' ' + (article.rawContent || '');
+      const response = await fetch('/api/ml/detect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToAnalyze })
+      });
+      const result = await response.json();
+      
+      if (result && result[0]) {
+        setArticleSentiments(prev => ({
+          ...prev,
+          [article.id]: result[0]
+        }));
+      } else {
+          throw new Error('Invalid ML response');
+      }
+    } catch (e) {
+      console.error(e);
+      toast({ variant: "destructive", title: "ML Detection Failed", description: "Failed to analyze article text." });
+    } finally {
+      setDetectingArticles(prev => {
+        const next = new Set(prev);
+        next.delete(article.id);
+        return next;
+      });
+    }
+  };
+
+  const handleSendChat = async (overrideMsg?: string) => {
+    const userMsg = overrideMsg || chatInput;
+    if (!userMsg.trim() || !isSignedIn) return;
+    
+    setChatInput('');
+    setChatHistory(prev => [...prev, { role: 'user', text: userMsg }]);
+    setIsChatting(true);
+
+    try {
+      const context = visibleNews.slice(0, 8).map(a => `${a.title}: ${a.summary}`).join('\n\n');
+      const response = await chatWithNews({ userMessage: userMsg, newsContext: context });
+      setChatHistory(prev => [...prev, { role: 'ai', text: response.answer }]);
+      
+      // Voice Output
+      try {
+        const audioResponse = await generateChatAudio({
+            text: response.answer,
+            language: filters.language
+        });
+        const audio = new Audio(audioResponse.audioDataUri);
+        audio.play();
+      } catch (audioErr) {
+        console.error("AI TTS Failed, falling back to robotic voice", audioErr);
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(response.answer);
+            const voices = window.speechSynthesis.getVoices();
+            const voice = voices.find(v => v.lang.includes('hi') || v.lang.includes('en-IN')) || voices[0];
+            if (voice) utterance.voice = voice;
+            utterance.rate = 1.05;
+            window.speechSynthesis.speak(utterance);
+        }
+      }
+    } catch (e: any) {
+      if (e.message.includes("GROQ_API_KEY_MISSING")) {
+        setChatHistory(prev => [...prev, { role: 'ai', text: "Error: GROQ_API_KEY is missing in your .env file! Please add it to chat with Llama-3." }]);
+      } else {
+        setChatHistory(prev => [...prev, { role: 'ai', text: "Sorry, my Groq servers are currently facing issues! Please try again later." }]);
+      }
+    } finally {
+      setIsChatting(false);
+    }
+  };
+
+  const handleVoiceInput = () => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      toast({ variant: "destructive", title: "Not Supported", description: "Your browser does not support voice input." });
+      return;
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-IN'; // Works well for Hinglish
+    recognition.interimResults = false;
+    
+    recognition.onstart = () => setIsListening(true);
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setChatInput(transcript);
+      handleSendChat(transcript);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    recognition.start();
+  };
   
   const handleCreatePodcast = async () => {
     if (news.length === 0) {
@@ -503,7 +662,28 @@ const NewsApp = () => {
                 <Podcast className="mr-2 h-4 w-4" />
                 Generate Discussion
               </Button>
+              {isSignedIn && (
+                <Button 
+                    variant="default" 
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition-all hover:scale-105 active:scale-95"
+                    onClick={() => setIsProfileModalOpen(true)}
+                >
+                    <UserCircle className="w-4 h-4 mr-2" />
+                    Profile Assist
+                </Button>
+              )}
               <ThemeToggle />
+              {isSignedIn ? (
+                <div className="flex items-center ml-2 border-l border-slate-200 dark:border-slate-700 pl-4">
+                  <UserButton afterSignOutUrl="/" />
+                </div>
+              ) : (
+                <div className="ml-2 border-l border-slate-200 dark:border-slate-700 pl-4">
+                  <SignInButton mode="modal">
+                    <Button variant="default">Sign In</Button>
+                  </SignInButton>
+                </div>
+              )}
             </div>
           </header>
 
@@ -606,6 +786,10 @@ const NewsApp = () => {
                 >
                   <option value="en">English</option>
                   <option value="hi">Hindi</option>
+                  <option value="ja">Japanese</option>
+                  <option value="de">German</option>
+                  <option value="fr">French</option>
+                  <option value="ta">Tamil</option>
                 </select>
               </div>
             </div>
@@ -632,10 +816,12 @@ const NewsApp = () => {
                   const isCurrentlyLoadingAudio = audioPlayer.currentArticleId === article.id && audioPlayer.isLoading;
                   const isCurrentlyProcessingText = processingArticleIds.has(article.id);
                   
-                  const title = filters.language === 'hi' && article.titleHi ? article.titleHi : article.title;
-                  const summary = filters.language === 'hi' && article.summaryHi ? article.summaryHi : article.summary;
-                  const importantPoints = filters.language === 'hi' && article.importantPointsHi.length > 0 ? article.importantPointsHi : article.importantPoints;
-                  const isLoading = isCurrentlyLoadingAudio || (filters.language === 'hi' && isCurrentlyProcessingText);
+                  const activeTranslation = translations[article.id]?.[filters.language];
+                  const title = filters.language !== 'en' && activeTranslation ? activeTranslation.title : article.title;
+                  const summary = filters.language !== 'en' && activeTranslation ? activeTranslation.summary : article.summary;
+                  const importantPoints = filters.language !== 'en' && activeTranslation && activeTranslation.points.length > 0 ? activeTranslation.points : article.importantPoints;
+                  
+                  const isLoading = isCurrentlyLoadingAudio || (filters.language !== 'en' && isCurrentlyProcessingText && !activeTranslation);
 
                   return (
                     <article
@@ -715,10 +901,53 @@ const NewsApp = () => {
                             </Tooltip>
                           )}
 
-                          <a href={article.contentUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 flex items-center gap-1.5">
-                              Read More <ExternalLink className="w-4 h-4" />
-                          </a>
+                          <Button 
+                            size="sm" 
+                            variant={articleSentiments[article.id] ? "default" : "outline"}
+                            onClick={() => handleDetect(article)}
+                            disabled={detectingArticles.has(article.id)}
+                            className={cn(
+                                "h-8 text-xs min-w-[100px]", 
+                                articleSentiments[article.id] ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600" : ""
+                            )}
+                          >
+                            {detectingArticles.has(article.id) ? (
+                              <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Analyzing...</>
+                            ) : articleSentiments[article.id] ? (
+                              <><Check className="w-3 h-3 mr-1" /> {(articleSentiments[article.id].score * 100).toFixed(0)}% Verified</>
+                            ) : (
+                              "AI Detect"
+                            )}
+                          </Button>
                         </div>
+                        <div className="flex items-center gap-1 mx-4">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              onClick={() => {
+                                if (!isSignedIn) {
+                                  toast({ variant: "destructive", title: "Authentication Required", description: "Please sign in to rate articles and get personalized recommendations." });
+                                  return;
+                                }
+                                setRatings(prev => {
+                                  const next = { ...prev, [article.id]: star };
+                                  if (user?.id) localStorage.setItem(`news_ratings_${user.id}`, JSON.stringify(next));
+                                  return next;
+                                });
+                              }}
+                              className={`focus:outline-none transition-colors ${
+                                (ratings[article.id] || 0) >= star
+                                  ? 'text-yellow-400'
+                                  : 'text-slate-300 dark:text-slate-600 hover:text-yellow-200'
+                              }`}
+                            >
+                              <Star className="w-5 h-5 fill-current" />
+                            </button>
+                          ))}
+                        </div>
+                        <a href={article.contentUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 flex items-center gap-1.5 ml-auto">
+                            Read More <ExternalLink className="w-4 h-4" />
+                        </a>
                       </div>
                     </article>
                   );
@@ -826,6 +1055,98 @@ const NewsApp = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={isProfileModalOpen} onOpenChange={setIsProfileModalOpen}>
+            <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl">
+              <DialogHeader className="mb-4">
+                <DialogTitle className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <UserCircle className="w-6 h-6 text-indigo-600" /> Profile Assist
+                </DialogTitle>
+                <DialogDescription className="text-slate-500 dark:text-slate-400">
+                  Your personalized ML reading profile and voice-enabled AI assistant.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* ML Profile Stats */}
+                  <div className="space-y-6">
+                      <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-xl border border-slate-200 dark:border-slate-700/50">
+                          <h3 className="font-semibold text-slate-900 dark:text-white mb-2">How it works</h3>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                              Every time you rate an article, our Recommendation Engine learns the topics, keywords, and tone you prefer. It actively filters out what you dislike and promotes what you like!
+                          </p>
+                      </div>
+
+                      <div className="space-y-4">
+                          <div>
+                              <h4 className="font-medium text-slate-900 dark:text-white mb-2 flex items-center gap-2"><Check className="w-4 h-4 text-green-500"/> What you like</h4>
+                              <div className="flex flex-wrap gap-2">
+                                  {getUserProfileSummary(news, ratings).likedTopics.map(topic => (
+                                      <span key={topic} className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-sm font-medium border border-green-200 dark:border-green-800">
+                                          {topic}
+                                      </span>
+                                  ))}
+                              </div>
+                          </div>
+                          <div>
+                              <h4 className="font-medium text-slate-900 dark:text-white mb-2 flex items-center gap-2"><X className="w-4 h-4 text-red-500"/> What you don't like</h4>
+                              <div className="flex flex-wrap gap-2">
+                                  {getUserProfileSummary(news, ratings).dislikedTopics.map(topic => (
+                                      <span key={topic} className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-full text-sm font-medium border border-red-200 dark:border-red-800">
+                                          {topic}
+                                      </span>
+                                  ))}
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+
+                  {/* AI Chatbot */}
+                  <div className="flex flex-col h-[500px] border border-slate-200 dark:border-slate-700/50 rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-800/30">
+                      <div className="bg-indigo-600 p-3 text-white flex items-center gap-2 font-medium">
+                          <MessageSquare className="w-5 h-5" /> Current Affairs Assistant
+                      </div>
+                      <div className="flex-1 p-4 overflow-y-auto space-y-4 flex flex-col">
+                          {chatHistory.length === 0 && (
+                              <div className="text-center text-slate-500 dark:text-slate-400 my-auto text-sm">
+                                  Ask me anything about today's news! <br/> e.g., "What is happening in politics today?"
+                              </div>
+                          )}
+                          {chatHistory.map((msg, idx) => (
+                              <div key={idx} className={cn("max-w-[80%] rounded-lg p-3 text-sm", msg.role === 'user' ? "bg-indigo-600 text-white self-end" : "bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 self-start")}>
+                                  {msg.text}
+                              </div>
+                          ))}
+                          {isChatting && (
+                              <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg p-3 self-start">
+                                  <Loader2 className="w-4 h-4 animate-spin text-indigo-600 dark:text-indigo-400" />
+                              </div>
+                          )}
+                      </div>
+                      <div className="p-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex gap-2 items-center">
+                          <button
+                              onClick={handleVoiceInput}
+                              disabled={isListening || isChatting}
+                              className={cn("p-2 rounded-full transition-colors", isListening ? "bg-red-500 text-white animate-pulse" : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200")}
+                          >
+                              {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                          </button>
+                          <input 
+                              type="text" 
+                              value={chatInput}
+                              onChange={(e) => setChatInput(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
+                              placeholder={isListening ? "Listening..." : "Ask in English or Hindi..."}
+                              className="flex-1 bg-slate-100 dark:bg-slate-900 border-none rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                          <Button size="sm" onClick={() => handleSendChat()} disabled={isChatting || !chatInput.trim()}>
+                              Send
+                          </Button>
+                      </div>
+                  </div>
+              </div>
+            </DialogContent>
+          </Dialog>
       </div>
     </TooltipProvider>
   );
