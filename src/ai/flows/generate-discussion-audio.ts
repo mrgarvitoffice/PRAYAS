@@ -1,16 +1,10 @@
-
 'use server';
 /**
- * @fileoverview Defines a Genkit flow that generates a two-person dialogue script from article content.
- * It does NOT generate audio, only the text script.
- *
- * Exports:
- * - generateDiscussionAudio: The main function to handle the discussion script generation.
- * - GenerateDiscussionAudioInput: The Zod schema for the function's input.
- * - GenerateDiscussionAudioOutput: The Zod schema for the function's output.
+ * @fileoverview Generates a two-person dialogue script using Groq (Llama-3.3).
+ * Groq is used here because it is fast and has no strict daily quota limits,
+ * unlike the Gemini free tier which caps at 20 requests/day.
  */
 
-import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 
 const GenerateDiscussionAudioInputSchema = z.object({
@@ -28,100 +22,84 @@ const GenerateDiscussionAudioOutputSchema = z.object({
 export type GenerateDiscussionAudioOutput = z.infer<typeof GenerateDiscussionAudioOutputSchema>;
 
 export async function generateDiscussionAudio(input: GenerateDiscussionAudioInput): Promise<GenerateDiscussionAudioOutput> {
-  try {
-    return await generateDiscussionScriptFlow(input);
-  } catch (error: any) {
-    console.error("[AI Action Error - Discussion Script] Flow failed:", error);
-    let errorMessage = "An unexpected error occurred while generating the script.";
-    if (error instanceof Error) {
-        if (error.message.includes('429')) {
-          errorMessage = 'You have exceeded the daily limit for script generation. Please try again tomorrow.';
-        } else {
-            errorMessage = error.message;
-        }
-    }
-    throw new Error(errorMessage);
-  }
-}
+  const groqApiKey = process.env.GROQ_API_KEY;
+  if (!groqApiKey) throw new Error('GROQ_API_KEY is not configured.');
 
-const dialoguePrompt = ai.definePrompt({
-    name: 'generateDiscussionScriptPrompt',
-    model: 'googleai/gemini-2.5-flash-lite',
-    input: { schema: z.object({ combinedSummaries: z.string(), language: z.string() }) },
-    output: { format: 'text' },
-    prompt: `You are an expert multilingual podcast scriptwriter for UPSC aspirants. Your primary task is to convert the following collection of news summaries into a clear, concise, and engaging two-person dialogue script.
+  const { articles, language } = input;
 
-**CRUCIAL INSTRUCTION: LANGUAGE ADHERENCE**
-The user has specified the desired language as: **{{{language}}}**.
-You **MUST** write the entire dialogue script in that same language.
-
-The dialogue should be between "Speaker1" (a knowledgeable and slightly formal expert) and "Speaker2" (an inquisitive and analytical student). Speaker1 should introduce and explain the topics, connecting them to relevant UPSC syllabus areas where possible. Speaker2 should ask clarifying questions, probe for deeper analysis, and summarize key takeaways.
-
-**IMPORTANT:** The length and depth of the dialogue must be proportional to the amount of content provided. If there are many summaries, create a longer, more detailed discussion. If there are only a few, keep it brief but insightful. Touch on each of the topics provided.
-
-**CRITICAL FORMATTING RULE:** The output MUST be a script formatted *exactly* like this, with each line starting with "Speaker1:" or "Speaker2:".
-Speaker1: [First line of dialogue in specified language]
-Speaker2: [Second line of dialogue in specified language]
-...and so on.
-
-Do NOT add any other text, introductions, or explanations. The entire output must be ONLY the dialogue script.
-
-News Summaries:
----
-{{{combinedSummaries}}}
----
-
-Please provide the dialogue script below in the specified language, ensuring its length and depth reflect the amount of source material and its tone is suitable for UPSC preparation.`
-});
-
-
-const generateDiscussionScriptFlow = ai.defineFlow({
-  name: 'generateDiscussionScriptFlow',
-  inputSchema: GenerateDiscussionAudioInputSchema,
-  outputSchema: GenerateDiscussionAudioOutputSchema,
-}, async ({ articles, language }) => {
-
-  const combinedSummaries = articles.map(article => {
-    return `Topic: ${article.title}\nSummary: ${article.content}`;
-  }).join('\n\n---\n\n');
+  const combinedSummaries = articles
+    .map(a => `Topic: ${a.title}\nSummary: ${a.content}`)
+    .join('\n\n---\n\n');
 
   if (!combinedSummaries.trim()) {
-    throw new Error("Cannot generate script from empty or invalid article content.");
+    throw new Error('Cannot generate script from empty article content.');
   }
 
-  console.log('[AI Flow - Discussion Script] Generating dialogue script directly from summaries...');
+  const systemPrompt = `You are an expert multilingual podcast scriptwriter for UPSC aspirants. Convert the provided news summaries into a clear, engaging two-person dialogue script.
 
-  const { text: dialogue } = await dialoguePrompt({ combinedSummaries, language });
+LANGUAGE: Write the ENTIRE script in: ${language === 'hi' ? 'Hindi' : language === 'ja' ? 'Japanese' : language === 'de' ? 'German' : language === 'fr' ? 'French' : language === 'ta' ? 'Tamil' : 'English'}.
 
-  if (!dialogue) {
-     throw new Error("The AI model returned no text, so a script cannot be created.");
-  }
+SPEAKERS:
+- Speaker1: A knowledgeable, slightly formal expert who explains topics and connects them to UPSC syllabus.
+- Speaker2: An inquisitive analytical student who asks clarifying questions and summarizes key takeaways.
 
-  let script = dialogue
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.startsWith('Speaker1:') || line.startsWith('Speaker2:'))
-    .join('\n');
+CRITICAL FORMATTING RULE: Output ONLY the script. Every line must start with exactly "Speaker1:" or "Speaker2:". No other text, headers, or explanations.
 
-  if (!script) {
-     console.error("AI generated text but it contained no valid dialogue lines. Raw output:", dialogue);
-     throw new Error("The AI failed to generate a valid script from the provided articles. The content may be too complex or short.");
-  }
+Example format:
+Speaker1: [dialogue line]
+Speaker2: [dialogue line]`;
 
-  // Enforce a hard character limit to prevent TTS token errors
-  const MAX_SCRIPT_LENGTH = 4000;
-  if (script.length > MAX_SCRIPT_LENGTH) {
-    console.warn(`[AI Flow - Discussion Script] Script is too long (${script.length} chars), truncating to ${MAX_SCRIPT_LENGTH}.`);
-    script = script.substring(0, MAX_SCRIPT_LENGTH);
-    const lastNewline = script.lastIndexOf('\n');
-    if (lastNewline > 0) {
-      script = script.substring(0, lastNewline);
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${groqApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Generate a podcast discussion script for the following news:\n\n${combinedSummaries}` },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('Groq Discussion Error:', errText);
+      throw new Error(`Groq API error: ${response.statusText}`);
     }
+
+    const data = await response.json();
+    const rawText: string = data.choices[0].message.content;
+
+    // Clean and validate the script
+    let script = rawText
+      .split('\n')
+      .map((line: string) => line.trim())
+      .filter((line: string) => line.startsWith('Speaker1:') || line.startsWith('Speaker2:'))
+      .join('\n');
+
+    if (!script) {
+      // Fallback: if model didn't follow format exactly, use raw text
+      script = rawText.trim();
+    }
+
+    // Enforce hard character limit to prevent TTS token errors
+    const MAX_SCRIPT_LENGTH = 4000;
+    if (script.length > MAX_SCRIPT_LENGTH) {
+      script = script.substring(0, MAX_SCRIPT_LENGTH);
+      const lastNewline = script.lastIndexOf('\n');
+      if (lastNewline > 0) script = script.substring(0, lastNewline);
+    }
+
+    return { discussionScript: script };
+
+  } catch (error: any) {
+    console.error('[Discussion Script] Groq flow failed:', error);
+    throw new Error(error.message || 'Failed to generate discussion script.');
   }
-
-  console.log('[AI Flow - Discussion Script] Dialogue script generated successfully.');
-
-  return {
-    discussionScript: script,
-  };
-});
+}
