@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { chatWithNews } from '@/ai/flows/chat-with-news';
 
 // We replaced the heavy onnxruntime-node (350MB+) with a lightweight AI call 
 // to fix the Vercel "Max serverless function size exceeded" error.
@@ -29,12 +28,11 @@ export async function POST(req: Request) {
                 messages: [
                     { 
                         role: "system", 
-                        content: "You are a sentiment analysis tool. Analyze the following news text and return ONLY a JSON array with one object: [{\"label\": \"POSITIVE\" | \"NEGATIVE\", \"score\": number}]. Do not include any other text." 
+                        content: "Analyze the following news text. Return ONLY a JSON array with one object like this: [{\"label\": \"POSITIVE\", \"score\": 0.95}]. Use labels POSITIVE or NEGATIVE." 
                     },
                     { role: "user", content: text.substring(0, 1000) }
                 ],
                 temperature: 0.1,
-                response_format: { type: "json_object" }
             })
         });
 
@@ -43,11 +41,13 @@ export async function POST(req: Request) {
         }
 
         const data = await response.json();
-        // Extract the result from the JSON response
-        const result = JSON.parse(data.choices[0].message.content);
+        const content = data.choices[0].message.content;
         
-        // Return in the same format Transformers.js did to keep the UI working
-        return NextResponse.json(Array.isArray(result) ? result : [result]);
+        // Extract JSON from the response
+        const jsonMatch = content.match(/\[.*\]/s);
+        const result = jsonMatch ? JSON.parse(jsonMatch[0]) : [{ label: 'NEUTRAL', score: 0.5 }];
+        
+        return NextResponse.json(result);
     } catch (error: any) {
         console.error("Detection error:", error);
         return NextResponse.json([{ label: 'NEUTRAL', score: 0.5 }]);
