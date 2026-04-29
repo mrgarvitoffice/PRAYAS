@@ -910,18 +910,19 @@ const NewsApp = () => {
                             disabled={detectingArticles.has(article.id)}
                             className={cn(
                                 "h-8 text-xs min-w-[110px] font-semibold", 
-                                articleSentiments[article.id]?.label === 'POSITIVE' && "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600",
-                                articleSentiments[article.id]?.label === 'NEGATIVE' && "bg-red-600 hover:bg-red-700 text-white border-red-600",
-                                articleSentiments[article.id]?.label === 'NEUTRAL' && "bg-slate-500 hover:bg-slate-600 text-white border-slate-500",
+                                articleSentiments[article.id]?.label === 'CREDIBLE' && "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600",
+                                articleSentiments[article.id]?.label === 'MISLEADING' && "bg-red-600 hover:bg-red-700 text-white border-red-600",
+                                articleSentiments[article.id]?.label === 'UNVERIFIED' && "bg-amber-500 hover:bg-amber-600 text-white border-amber-500",
                             )}
                           >
                             {detectingArticles.has(article.id) ? (
                               <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Analyzing...</>
                             ) : articleSentiments[article.id] ? (
                               <><Check className="w-3 h-3 mr-1" />
-                                {articleSentiments[article.id].label === 'POSITIVE' ? '😊 Positive' 
-                                  : articleSentiments[article.id].label === 'NEGATIVE' ? '⚠️ Negative' 
-                                  : '😐 Neutral'}
+                                {(articleSentiments[article.id].score * 100).toFixed(0)}%{' '}
+                                {articleSentiments[article.id].label === 'CREDIBLE' ? 'Credible'
+                                  : articleSentiments[article.id].label === 'MISLEADING' ? 'Misleading'
+                                  : 'Unverified'}
                               </>
                             ) : (
                               "AI Detect"
