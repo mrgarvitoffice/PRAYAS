@@ -269,9 +269,9 @@ const NewsApp = () => {
   // Only re-sort the news feed when the actual news array changes (e.g. new fetch).
   // This prevents the UI from jumping around while the user is actively reading and rating.
   useEffect(() => {
-    setRecommendedNews(sortArticlesByPreference(news, ratings, ratingsMeta));
+    setRecommendedNews(sortArticlesByPreference(news, ratings, ratingsMeta, articleSentiments));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [news]);
+  }, [news, articleSentiments]);
 
   const visibleNews = useMemo(() => recommendedNews.slice(0, visibleArticlesCount), [recommendedNews, visibleArticlesCount]);
 

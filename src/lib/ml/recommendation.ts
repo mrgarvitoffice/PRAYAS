@@ -70,30 +70,32 @@ export function loadRatingsMeta(userId: string): Record<string, RatedArticleMeta
 export function sortArticlesByPreference(
   articles: Article[],
   ratings: Record<string, number>,
-  persistentMeta?: Record<string, RatedArticleMeta>
+  persistentMeta?: Record<string, RatedArticleMeta>,
+  credibilityScores?: Record<string, { label: string; score: number }>
 ): Article[] {
   const ratedArticleIds = Object.keys(ratings);
-  if (ratedArticleIds.length === 0) return articles;
 
   const userProfile = new Map<string, number>();
   const categoryScores = new Map<string, number>();
 
   // 1a. Build profile from current feed articles (in-session ratings)
-  articles.forEach(article => {
-    const rating = ratings[article.id];
-    if (rating) {
-      const weight = rating - 3;
-      if (weight !== 0) {
-        if (article.category) {
-          categoryScores.set(article.category, (categoryScores.get(article.category) || 0) + weight * 2);
+  if (ratedArticleIds.length > 0) {
+    articles.forEach(article => {
+      const rating = ratings[article.id];
+      if (rating) {
+        const weight = rating - 3;
+        if (weight !== 0) {
+          if (article.category) {
+            categoryScores.set(article.category, (categoryScores.get(article.category) || 0) + weight * 2);
+          }
+          const words = tokenize(`${article.title} ${article.summary} ${article.rawContent}`);
+          words.forEach(word => {
+            userProfile.set(word, (userProfile.get(word) || 0) + weight);
+          });
         }
-        const words = tokenize(`${article.title} ${article.summary} ${article.rawContent}`);
-        words.forEach(word => {
-          userProfile.set(word, (userProfile.get(word) || 0) + weight);
-        });
       }
-    }
-  });
+    });
+  }
 
   // 1b. PERSISTENT MEMORY: also build profile from stored article metadata
   if (persistentMeta) {
@@ -110,18 +112,32 @@ export function sortArticlesByPreference(
     });
   }
 
-  // 2. Score all articles against the profile
+  // 2. Score all articles against the profile + credibility
   const scoredArticles = articles.map(article => {
     let score = 0;
+
+    // Keyword preference scoring
     const words = tokenize(`${article.title} ${article.summary} ${article.rawContent}`);
     words.forEach(word => {
       if (userProfile.has(word)) score += userProfile.get(word)!;
     });
+
+    // Category preference scoring
     if (article.category && categoryScores.has(article.category)) {
       score += categoryScores.get(article.category)! * 5;
     }
+
+    // 2c. CREDIBILITY BOOST/PENALTY — 97% Credible floats up, 61% Misleading pushed down
+    if (credibilityScores?.[article.id]) {
+      const credibility = credibilityScores[article.id];
+      if (credibility.label === 'CREDIBLE') score += 30;       // Strong boost
+      else if (credibility.label === 'UNVERIFIED') score += 0; // Neutral
+      else if (credibility.label === 'MISLEADING') score -= 40; // Strong penalty
+    }
+
     // Push already-rated articles down so fresh news floats up
     if (ratings[article.id]) score -= 50;
+
     return { article, score };
   });
 

@@ -29,20 +29,17 @@ export async function POST(req: Request) {
                     {
                         role: "system",
                         content: `You are a professional news credibility and fact-checking AI system.
-Your task is to analyze the given news article text and assess its credibility based on:
-1. Factual consistency - does the content contradict known facts?
-2. Journalistic quality - is the language objective or sensationalist?
-3. Source reliability signals - does it cite specific sources, dates, locations?
-4. Logical coherence - are claims well-supported or vague?
+Analyze the given news article and assess its credibility.
 
 Respond ONLY with a valid JSON object in this EXACT format (no other text):
-{"label": "CREDIBLE" | "MISLEADING" | "UNVERIFIED", "score": <float between 0.5 and 1.0>}
+{"label": "CREDIBLE" | "MISLEADING" | "UNVERIFIED", "score": <number>}
 
-Where:
-- "CREDIBLE" = appears factually sound, objective reporting (score 0.75–1.0)
-- "UNVERIFIED" = lacks clear sources, cannot be confirmed (score 0.5–0.74)  
-- "MISLEADING" = sensationalist, logically inconsistent, or appears false (score 0.5–0.65)
-- score = confidence in the verdict`
+Use EXACTLY these scores:
+- "CREDIBLE": score must be exactly 0.97 — factually sound, objective, cites sources
+- "UNVERIFIED": score must be exactly 0.75 — lacks clear sourcing, cannot be fully confirmed
+- "MISLEADING": score must be exactly 0.61 — sensationalist, logically inconsistent, or appears false
+
+Choose the label that best fits. Do not use any other score values.`
                     },
                     {
                         role: "user",
